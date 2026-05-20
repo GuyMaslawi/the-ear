@@ -1,0 +1,11 @@
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - '27017:27017'
+    volumes:
+      - the-ear-mongo-data:/data/db
+    restart: unless-stopped
+
+volumes:
+  the-ear-mongo-data:

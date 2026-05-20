@@ -1,0 +1,16 @@
+{
+  "name": "the-ear",
+  "private": true,
+  "description": "The Ear — NestJS backend + Expo mobile app",
+  "scripts": {
+    "dev:backend": "npm run start:dev --prefix apps/backend",
+    "dev:mobile": "npm run start --prefix apps/mobile",
+    "dev:all": "concurrently -n backend,mobile -c blue,magenta \"npm run dev:backend\" \"npm run dev:mobile\"",
+    "open:ios": "open apps/mobile/ios/app.xcworkspace",
+    "docker:up": "docker compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

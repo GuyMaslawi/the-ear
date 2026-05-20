@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "האוזן",
+    "slug": "the-ear-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1426"
+    },
+    "ios": {
+      "bundleIdentifier": "com.theear.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "האוזן משתמשת במיקום כדי להציג שאלות רלוונטיות לאזור שבו אתה נמצא, ולאימות תשובות מהשטח.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "האוזן משתמשת במיקום כדי לעדכן שאלות חיות בסביבתך."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1426"
+      },
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "האוזן צריכה גישה למיקום כדי להציג טיפות חיות באזור."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:3000"
+    }
+  }
+}

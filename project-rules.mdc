@@ -1,0 +1,64 @@
+---
+alwaysApply: true
+---
+
+# The Ear / האוזן — Project Rules
+
+## Product identity
+- Folder name may be `spy-app`, but the product is called **The Ear** / **האוזן**.
+- Do not rename the product to “Spy App”.
+- The app is location-based civic intelligence: users ask location-tied questions (“drops”), others answer from the field, and the app shows nearby relevant activity on a map/feed.
+
+## Tech stack
+- Backend: NestJS, MongoDB/Mongoose, Socket.io, class-validator, ngeohash, Jest e2e.
+- Mobile: Expo, React Native, TypeScript, React Navigation, react-native-maps, expo-location, socket.io-client, Async Storage.
+- Local DB: Docker Compose MongoDB.
+- Monorepo uses npm/concurrently.
+
+## Working style
+- Do not rewrite large parts of the app unless absolutely required.
+- Prefer small, focused fixes.
+- Before changing code, inspect the existing implementation and reuse existing patterns.
+- Do not create mock data unless explicitly requested.
+- Do not remove working functionality.
+- Avoid over-engineering.
+- Keep TypeScript strict and clean.
+
+## UX rules
+- Every visible UI element must be functional or clearly disabled.
+- Buttons must respond to press events.
+- Loading, empty, error, and success states must exist where needed.
+- Mobile UI must not overlap, overflow, or hide important actions.
+- Prioritize smooth field-user experience: fast posting, fast answering, nearby relevance, clear map/feed behavior.
+
+## Backend rules
+- Keep REST API contracts stable unless asked.
+- Preserve anonymous auth flow.
+- Preserve location update flow.
+- Preserve MongoDB 2dsphere geo search.
+- Preserve Socket.io live events for nearby drops/updates.
+- Validate request bodies with DTOs/class-validator.
+- Do not add fake backend behavior just to satisfy UI.
+
+## Mobile rules
+- Use real API calls.
+- Keep socket connection lifecycle safe.
+- Handle permissions for location properly.
+- Store anonymous user/session data safely with Async Storage.
+- Make map, feed, drop creation, drop view, answers, and my questions actually usable.
+
+## AI behavior
+- Do not waste time explaining obvious basics.
+- First identify the exact broken flow.
+- Then patch only the required files.
+- After every fix, explain briefly:
+  1. What was broken
+  2. What changed
+  3. How to test manually
+- If a change touches API contracts, mention it clearly.
+
+## Testing
+- Run relevant type checks/tests when possible.
+- For backend changes, consider Jest/e2e impact.
+- For mobile changes, verify runtime behavior in Expo.
+- Always include manual test steps.
