@@ -10,7 +10,7 @@ export class RootErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, message: '' };
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, message: error.message || 'Something went wrong.' };
+    return { hasError: true, message: error.message || 'משהו השתבש.' };
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
@@ -25,10 +25,10 @@ export class RootErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <View style={styles.root}>
-          <Text style={styles.title}>The Ear hit a snag</Text>
+          <Text style={styles.title}>נתקלנו בתקלה ב״האוזן״</Text>
           <Text style={styles.body}>{this.state.message}</Text>
           <Pressable style={styles.btn} onPress={this.reset}>
-            <Text style={styles.btnText}>Try again</Text>
+            <Text style={styles.btnText}>נסה שוב</Text>
           </Pressable>
         </View>
       );

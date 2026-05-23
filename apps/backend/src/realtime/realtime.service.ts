@@ -4,6 +4,13 @@ import type { Server, Socket } from 'socket.io';
 
 type LatLng = { lat: number; lng: number };
 
+/**
+ * Distance within which a new drop is broadcast to a user. Uses the drop's own
+ * answer radius when larger, but at minimum reaches everyone whose map/feed
+ * (~2800m client load radius) would already show the drop.
+ */
+const DISCOVERY_NOTIFY_METERS = 3000;
+
 @Injectable()
 export class RealtimeService {
   private readonly log = new Logger(RealtimeService.name);
@@ -62,12 +69,13 @@ export class RealtimeService {
       `emit new_drop_nearby dropId=${payload.dropId} category=${payload.category}`,
     );
     const center = this.geo.point(payload.lat, payload.lng);
+    const notifyRadius = Math.max(payload.radiusMeters, DISCOVERY_NOTIFY_METERS);
     for (const [userId, pos] of this.userLocations) {
       const d = this.geo.distanceMeters(
         center,
         this.geo.point(pos.lat, pos.lng),
       );
-      if (d <= payload.radiusMeters) {
+      if (d <= notifyRadius) {
         const sockets = this.userSockets.get(userId);
         if (!sockets) continue;
         for (const sid of sockets) {

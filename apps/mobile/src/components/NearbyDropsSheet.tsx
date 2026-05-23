@@ -4,17 +4,20 @@ import {
   Animated,
   Easing,
   FlatList,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
+import { PressableScale } from './ui/PressableScale';
+import { Button } from './ui/Button';
+import { tapLight } from '../lib/haptics';
 import type { Drop } from '../types/api';
 import { categoryHe, categoryMarkerIcon } from '../lib/categories';
-import { formatRelativeTimeHe } from '../lib/relativeTime';
+import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
 
 type Props = {
   drops: Drop[];
@@ -85,36 +88,51 @@ export function NearbyDropsSheet({
 
       <View style={styles.headerBlock}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>מה תרצה לדעת כאן?</Text>
-          <Pressable onPress={onRefresh} hitSlop={12} style={styles.refreshGhost}>
+          <Text style={styles.title}>מה קורה כאן עכשיו</Text>
+          <PressableScale
+            haptic="none"
+            onPress={() => {
+              tapLight();
+              onRefresh();
+            }}
+            hitSlop={12}
+            style={styles.refreshGhost}
+            accessibilityRole="button"
+            accessibilityLabel="רענן רשימה"
+          >
+            <Ionicons name="refresh" size={13} color={colors.electricBright} />
             <Text style={styles.refreshGhostText}>רענן</Text>
-          </Pressable>
+          </PressableScale>
         </View>
 
         <Text style={styles.subtitle}>
-          שאל אנשים שנמצאים באזור וקבל תשובה מהשטח
+          עדכונים בזמן אמת מאנשים שנמצאים באזור
         </Text>
 
         {areaHint ? <Text style={styles.areaHint}>{areaHint}</Text> : null}
 
         <View style={styles.ctaRow}>
-          <Pressable
-            style={styles.ctaPrimary}
-            onPress={onAsk}
-            accessibilityRole="button"
-            accessibilityLabel="שאל כאן לפי המפה או נקודה שנבחרה"
-          >
-            <Text style={styles.ctaPrimaryText}>שאל כאן</Text>
-          </Pressable>
-          <Pressable
-            style={styles.ctaSecondary}
+          <Button
+            label="מה קורה עכשיו"
+            icon="pulse"
+            variant="success"
+            size="md"
             onPress={onLiveFeed}
+            style={styles.ctaPrimary}
+          />
+          <PressableScale
+            haptic="none"
+            style={styles.ctaSecondary}
+            onPress={() => {
+              tapLight();
+              onAsk();
+            }}
             accessibilityRole="button"
-            accessibilityLabel="בקשות פעילות באזור"
+            accessibilityLabel="שאל כאן"
           >
-            <View style={styles.liveDot} />
-            <Text style={styles.ctaSecondaryText}>בקשות פעילות באזור</Text>
-          </Pressable>
+            <Ionicons name="add-circle-outline" size={15} color={colors.electricBright} />
+            <Text style={styles.ctaSecondaryText}>שאל כאן</Text>
+          </PressableScale>
         </View>
       </View>
 
@@ -136,27 +154,53 @@ export function NearbyDropsSheet({
           ListEmptyComponent={
             <Text style={styles.empty}>
               {emptyHint ??
-                'אין שאלות פעילות בקרבת מקום כרגע — נסה להזיז את המפה או לרענן.'}
+                'עדיין אין עדכונים מהשטח כאן · עוקבים בזמן אמת ונעדכן ברגע שמשהו קורה.'}
             </Text>
           }
-          renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => onSelect(item)}>
-              <View style={styles.bubble}>
-                <View style={styles.bubbleHeader}>
-                  <Text style={styles.catIcon}>{categoryMarkerIcon[item.category]}</Text>
-                  <Text style={styles.cat}>{categoryHe(item.category)}</Text>
-                  <LivePulse />
+          renderItem={({ item }) => {
+            const verified = item.answerCount >= 1;
+            const fresh = freshnessLabelHe(item.createdAt, nowMs);
+            const freshStyle =
+              fresh.level === 'live'
+                ? styles.freshLive
+                : fresh.level === 'fresh'
+                  ? styles.freshFresh
+                  : fresh.level === 'stale'
+                    ? styles.freshStale
+                    : styles.freshOutdated;
+            return (
+              <PressableScale
+                style={styles.row}
+                scaleTo={0.98}
+                onPress={() => onSelect(item)}
+                accessibilityRole="button"
+                accessibilityLabel={item.question}
+              >
+                <View style={styles.bubble}>
+                  <View style={styles.bubbleHeader}>
+                    <Text style={styles.catIcon}>{categoryMarkerIcon[item.category]}</Text>
+                    <Text style={styles.cat}>{categoryHe(item.category)}</Text>
+                    {verified ? (
+                      <View style={styles.verifiedPill}>
+                        <Text style={styles.verifiedPillText}>✓ מהשטח</Text>
+                      </View>
+                    ) : null}
+                    {verified ? <LivePulse /> : null}
+                  </View>
+                  <Text style={styles.q} numberOfLines={2}>
+                    {item.question}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {verified
+                      ? `מהשטח · ${item.answerCount} משיבים · עודכן ${formatRelativeTimeHe(item.createdAt, nowMs)}`
+                      : `ממתין לעדכון מהשטח · נפתח ${formatRelativeTimeHe(item.createdAt, nowMs)}`}
+                    {'  '}
+                    <Text style={freshStyle}>· {fresh.label}</Text>
+                  </Text>
                 </View>
-                <Text style={styles.q} numberOfLines={2}>
-                  {item.question}
-                </Text>
-                <Text style={styles.meta}>
-                  {formatRelativeTimeHe(item.createdAt, nowMs)} · {item.answerCount} תשובות
-                  · רדיוס {item.radiusMeters}מ׳
-                </Text>
-              </View>
-            </Pressable>
-          )}
+              </PressableScale>
+            );
+          }}
         />
       )}
     </View>
@@ -169,7 +213,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '38%',
+    maxHeight: '55%',
     backgroundColor: colors.navy,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -240,22 +284,6 @@ const styles = StyleSheet.create({
   },
   ctaPrimary: {
     flex: 1,
-    backgroundColor: colors.electric,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  ctaPrimaryText: {
-    color: colors.white,
-    fontWeight: '900',
-    fontSize: 13,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-    lineHeight: 18,
   },
   ctaSecondary: {
     flexDirection: 'row-reverse',
@@ -266,25 +294,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.5)',
-    backgroundColor: 'rgba(22, 163, 74, 0.15)',
+    borderColor: colors.bubbleBorder,
+    backgroundColor: colors.bubble,
   },
   ctaSecondaryText: {
-    color: '#DCFCE7',
+    color: colors.electricBright,
     fontWeight: '800',
     fontSize: 12,
     textAlign: 'center',
     writingDirection: 'rtl',
   },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#4ADE80',
-  },
   refreshGhost: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(147, 197, 253, 0.35)',
@@ -326,6 +351,20 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
+  verifiedPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(74, 222, 128, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.35)',
+  },
+  verifiedPillText: {
+    color: '#86EFAC',
+    fontSize: 10,
+    fontWeight: '800',
+    writingDirection: 'rtl',
+  },
   pulseOuter: {
     width: 12,
     height: 12,
@@ -356,4 +395,8 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     fontWeight: '600',
   },
+  freshLive: { color: '#86EFAC', fontWeight: '800' },
+  freshFresh: { color: '#BBF7D0', fontWeight: '800' },
+  freshStale: { color: '#FDE047', fontWeight: '800' },
+  freshOutdated: { color: colors.textMuted, fontWeight: '800' },
 });

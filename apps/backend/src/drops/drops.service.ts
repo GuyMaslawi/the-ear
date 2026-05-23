@@ -117,6 +117,20 @@ export class DropsService {
       .exec();
   }
 
+  async closeOwn(dropId: string, userId: string) {
+    const doc = await this.dropModel.findById(dropId).exec();
+    if (!doc) throw new NotFoundException('Drop not found');
+    if (String(doc.createdBy) !== String(userId)) {
+      throw new ForbiddenException('Not your drop');
+    }
+    if (doc.status !== DropStatus.CLOSED) {
+      doc.status = DropStatus.CLOSED;
+      await doc.save();
+      this.log.log(`Drop closed by owner id=${dropId}`);
+    }
+    return this.toPublicDrop(doc, userId);
+  }
+
   async getRawDropForAnswer(dropId: string, userId: string) {
     const doc = await this.dropModel.findById(dropId).exec();
     if (!doc) throw new NotFoundException('Drop not found');

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,26 +16,30 @@ import type { DropFlowParamList } from '../navigation/RootNavigator';
 import { MapErrorBoundary, MapFallbackNotice } from '../components/MapErrorBoundary';
 import { DropMapMarker } from '../components/DropMapMarker';
 import { colors } from '../theme/colors';
+import { Button } from '../components/ui/Button';
 import type { Answer, Drop } from '../types/api';
-import { ensureAnonymousSession, fetchAnswers, fetchDrop } from '../lib/api';
+import { closeOwnDrop, ensureAnonymousSession, fetchAnswers, fetchDrop } from '../lib/api';
+import { hideAnswer, hideDrop, useHiddenContent } from '../lib/hiddenContent';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
 import { connectSocket, getSocket } from '../lib/socket';
 import { categoryHe } from '../lib/categories';
-import { distanceMeters } from '../lib/geo';
-import { formatRelativeTimeHe } from '../lib/relativeTime';
+import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
 import { trustLabelHe } from '../lib/simulatedIntel';
 import { quickStatusLabel } from '../lib/answerOptions';
+import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
+import type { LocationSource } from '../lib/devLocation';
 
 type Props = NativeStackScreenProps<DropFlowParamList, 'DropDetails'>;
 
 export function DropDetailsScreen({ navigation, route }: Props) {
   const { dropId, cachedDrop } = route.params;
+  const { hiddenAnswerIds } = useHiddenContent();
   const [drop, setDrop] = useState<Drop | null>(cachedDrop ?? null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [fetchErrorMsg, setFetchErrorMsg] = useState<string | null>(null);
-  const [distanceFromUser, setDistanceFromUser] = useState<number | null>(null);
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number; source: LocationSource } | null>(null);
   const [lastUpdateAt, setLastUpdateAt] = useState<string>(
     () => cachedDrop?.createdAt ?? new Date().toISOString(),
   );
@@ -100,13 +106,20 @@ export function DropDetailsScreen({ navigation, route }: Props) {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted' || !drop) return;
+        if (status !== 'granted') {
+          if (!cancelled) setUserPos((p) => (p ? { ...p, source: 'denied' } : { lat: 0, lng: 0, source: 'denied' }));
+          return;
+        }
         const pos = await Location.getCurrentPositionAsync({});
-        const [lng, lat] = drop.location.coordinates;
-        const m = distanceMeters(pos.coords.latitude, pos.coords.longitude, lat, lng);
-        if (!cancelled) setDistanceFromUser(Math.round(m));
+        if (!cancelled) {
+          setUserPos({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            source: 'gps',
+          });
+        }
       } catch {
-        if (!cancelled) setDistanceFromUser(null);
+        if (!cancelled) setUserPos((p) => (p ? { ...p, source: 'unavailable' } : { lat: 0, lng: 0, source: 'unavailable' }));
       }
     })();
     return () => {
@@ -139,11 +152,109 @@ export function DropDetailsScreen({ navigation, route }: Props) {
     };
   }, [dropId, reload]);
 
-  const trust = trustLabelHe(Math.max(answers.length, drop?.answerCount ?? 0));
+  const effectiveAnswerCount = Math.max(answers.length, drop?.answerCount ?? 0);
+  const trust = trustLabelHe(effectiveAnswerCount);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 20_000);
     return () => clearInterval(t);
+  }, []);
+
+  const latestAnswerIso = answers.length
+    ? answers.reduce(
+        (acc, a) =>
+          new Date(a.createdAt).getTime() > new Date(acc).getTime() ? a.createdAt : acc,
+        answers[0]!.createdAt,
+      )
+    : null;
+  const latestActivityIso = latestAnswerIso ?? lastUpdateAt;
+  const freshness = freshnessLabelHe(latestActivityIso, nowMs);
+  const latestAnswerAgeMin = latestAnswerIso
+    ? Math.max(0, Math.floor((nowMs - new Date(latestAnswerIso).getTime()) / 60_000))
+    : null;
+
+  const openReportDrop = useCallback(() => {
+    navigation.navigate('ReportContent', { targetType: 'drop', targetId: dropId });
+  }, [navigation, dropId]);
+
+  const confirmHideDrop = useCallback(() => {
+    Alert.alert(
+      'הסתרת תוכן',
+      'השאלה הזו לא תופיע יותר ברשימות שלך במכשיר.',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'הסתר',
+          style: 'destructive',
+          onPress: () => {
+            void hideDrop(dropId).then(() => navigation.goBack());
+          },
+        },
+      ],
+    );
+  }, [navigation, dropId]);
+
+  const confirmCloseOwn = useCallback(() => {
+    Alert.alert(
+      'סגירת שאלה',
+      'בטוח לסגור את השאלה? היא לא תופיע יותר לאנשים באזור.',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'סגור שאלה',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ensureAnonymousSession();
+              await closeOwnDrop(dropId);
+              navigation.goBack();
+            } catch (e) {
+              Alert.alert('לא הצלחנו לסגור', apiUserMessageHeAuto(e));
+            }
+          },
+        },
+      ],
+    );
+  }, [navigation, dropId]);
+
+  const openMenu = useCallback(() => {
+    const isMine = !!drop?.isMine;
+    const buttons: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }[] = [
+      { text: 'דווח', onPress: openReportDrop },
+      { text: 'הסתר תוכן כזה', onPress: confirmHideDrop },
+    ];
+    if (isMine) {
+      buttons.push({ text: 'סגור שאלה', style: 'destructive', onPress: confirmCloseOwn });
+    }
+    buttons.push({ text: 'ביטול', style: 'cancel' });
+    Alert.alert('פעולות', undefined, buttons);
+  }, [drop?.isMine, openReportDrop, confirmHideDrop, confirmCloseOwn]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={openMenu}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="פעולות נוספות"
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingHorizontal: 8 })}
+        >
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.white} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, openMenu]);
+
+  const reportAnswer = useCallback(
+    (answerId: string) => {
+      navigation.navigate('ReportContent', { targetType: 'answer', targetId: answerId });
+    },
+    [navigation],
+  );
+
+  const hideAnswerLocal = useCallback((answerId: string) => {
+    void hideAnswer(answerId);
   }, []);
 
   if (loading && !drop) {
@@ -163,6 +274,8 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   }
 
   const [lng, lat] = drop.location.coordinates;
+  const eligibility = canUserAnswerDrop({ drop, userCoords: userPos });
+  const distanceFromUser = eligibility.distanceMeters ?? null;
 
   return (
     <ScrollView
@@ -213,9 +326,15 @@ export function DropDetailsScreen({ navigation, route }: Props) {
                 ? 'משאירים את המידע שכבר הוצג. אפשר לנסות שוב.'
                 : 'נסה שוב בעוד רגע.')}
           </Text>
-          <Pressable style={styles.errorBannerRetry} onPress={() => void reload()} hitSlop={8}>
-            <Text style={styles.errorBannerRetryText}>נסה שוב</Text>
-          </Pressable>
+          <Button
+            label="נסה שוב"
+            icon="refresh"
+            variant="ghost"
+            size="md"
+            fullWidth={false}
+            onPress={() => void reload()}
+            style={styles.errorBannerRetry}
+          />
         </View>
       ) : null}
 
@@ -228,12 +347,23 @@ export function DropDetailsScreen({ navigation, route }: Props) {
 
       <View style={styles.statsRow}>
         <View style={styles.statPill}>
-          <Text style={styles.statVal}>{answers.length}</Text>
+          <Text style={styles.statVal}>{effectiveAnswerCount}</Text>
           <Text style={styles.statLbl}>תשובות</Text>
         </View>
         <View style={styles.statPillWide}>
           <Text style={styles.statLbl}>עדכון אחרון</Text>
-          <Text style={styles.statTime}>{formatRelativeTimeHe(lastUpdateAt, nowMs)}</Text>
+          <Text style={styles.statTime}>{formatRelativeTimeHe(latestActivityIso, nowMs)}</Text>
+          <Text
+            style={[
+              styles.statFreshness,
+              freshness.level === 'live' && styles.freshnessLive,
+              freshness.level === 'fresh' && styles.freshnessFresh,
+              freshness.level === 'stale' && styles.freshnessStale,
+              freshness.level === 'outdated' && styles.freshnessOutdated,
+            ]}
+          >
+            {freshness.label}
+          </Text>
         </View>
       </View>
 
@@ -256,7 +386,7 @@ export function DropDetailsScreen({ navigation, route }: Props) {
             <Text style={styles.pillText}>{categoryHe(drop.category)}</Text>
           </View>
           <View style={styles.pillMuted}>
-            <Text style={styles.pillMutedText}>{answers.length} תשובות פעילות</Text>
+            <Text style={styles.pillMutedText}>{effectiveAnswerCount} תשובות פעילות</Text>
           </View>
         </View>
         <Text style={styles.q}>{drop.question}</Text>
@@ -268,42 +398,85 @@ export function DropDetailsScreen({ navigation, route }: Props) {
 
       <View style={styles.ai}>
         <Text style={styles.aiTitle}>סיכום חי מהשטח</Text>
-        <Text style={styles.aiBody}>{drop.aiSummary || 'מחכה לתשובות מהשטח…'}</Text>
+        <Text style={styles.aiBody}>
+          {drop.aiSummary
+            ? drop.aiSummary
+            : effectiveAnswerCount === 0
+              ? 'מחפש מי שמשיב מהשטח · בדרך כלל מקבלים עדכון תוך כמה דקות'
+              : latestAnswerAgeMin != null && latestAnswerAgeMin <= 10
+                ? `מבוסס על ${effectiveAnswerCount} תשובות מהשטח. העדכון האחרון התקבל ${formatRelativeTimeHe(latestActivityIso, nowMs)}.`
+                : `מבוסס על ${effectiveAnswerCount} תשובות מהשטח. לא התקבלו עדכונים בדקות האחרונות.`}
+        </Text>
         {drop.confidenceScore > 0 ? (
           <Text style={styles.aiMeta}>ביטחון מודל: {(drop.confidenceScore * 100).toFixed(0)}%</Text>
         ) : null}
       </View>
 
-      <Pressable
-        style={styles.answerCta}
-        onPress={() => navigation.navigate('AnswerDrop', { dropId, cachedDrop: drop })}
-      >
-        <Text style={styles.answerCtaText}>אני כאן עכשיו — ענה</Text>
-      </Pressable>
+      {eligibility.canAnswer ? (
+        <Button
+          label="אני כאן עכשיו — ענה"
+          icon="navigate"
+          variant="success"
+          onPress={() => navigation.navigate('AnswerDrop', { dropId, cachedDrop: drop })}
+          style={styles.answerCta}
+        />
+      ) : (
+        <View
+          style={[
+            styles.blockedBanner,
+            eligibility.reason === 'own_drop' && styles.blockedBannerOwner,
+          ]}
+        >
+          <Text style={styles.blockedBannerText}>
+            {blockedReasonHe(eligibility.reason, eligibility.distanceMeters)}
+          </Text>
+        </View>
+      )}
 
       <Text style={styles.section}>תשובות מהשטח</Text>
 
-      {answers.length === 0 ? (
+      {answers.filter((a) => !hiddenAnswerIds.has(a.id)).length === 0 ? (
         <Text style={styles.emptyAnswers}>
           אין תשובות עדיין — היה הראשון לענות
         </Text>
       ) : null}
 
-      {answers.map((a) => (
-        <View key={a.id} style={styles.answerRow}>
-          <View style={styles.answerTop}>
-            <View style={styles.answerBody}>
-              <Text style={styles.answerStatus}>
-                {quickStatusLabel(a.quickStatus, drop.category, drop.question)}
-              </Text>
-              {a.text && a.text !== '—' ? <Text style={styles.answerText}>{a.text}</Text> : null}
-              <Text style={styles.answerMeta}>
-                ~{a.distanceFromDrop}מ׳ מהמרכז · {formatRelativeTimeHe(a.createdAt, nowMs)}
-              </Text>
+      {answers
+        .filter((a) => !hiddenAnswerIds.has(a.id))
+        .map((a) => (
+          <View key={a.id} style={styles.answerRow}>
+            <View style={styles.answerTop}>
+              <View style={styles.answerBody}>
+                <Text style={styles.answerStatus}>
+                  {quickStatusLabel(a.quickStatus, drop.category, drop.question)}
+                </Text>
+                {a.text && a.text !== '—' ? <Text style={styles.answerText}>{a.text}</Text> : null}
+                <Text style={styles.answerMeta}>
+                  ~{a.distanceFromDrop}מ׳ מהמרכז · {formatRelativeTimeHe(a.createdAt, nowMs)}
+                </Text>
+                <View style={styles.answerActions}>
+                  <Pressable
+                    onPress={() => reportAnswer(a.id)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="דווח על תשובה"
+                  >
+                    <Text style={styles.answerActionLink}>דווח</Text>
+                  </Pressable>
+                  <Text style={styles.answerActionSep}>·</Text>
+                  <Pressable
+                    onPress={() => hideAnswerLocal(a.id)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="הסתר תשובה"
+                  >
+                    <Text style={styles.answerActionLink}>הסתר</Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
+        ))}
     </ScrollView>
   );
 }
@@ -354,17 +527,6 @@ const styles = StyleSheet.create({
   errorBannerRetry: {
     marginTop: 12,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-  },
-  errorBannerRetryText: {
-    color: colors.white,
-    fontWeight: '800',
-    fontSize: 12,
   },
   justNowRow: {
     marginHorizontal: 16,
@@ -413,6 +575,11 @@ const styles = StyleSheet.create({
   statVal: { color: colors.white, fontWeight: '900', fontSize: 18 },
   statLbl: { color: colors.textSecondary, fontSize: 11, marginTop: 2, fontWeight: '700' },
   statTime: { color: colors.electricBright, fontSize: 14, fontWeight: '800', marginTop: 2 },
+  statFreshness: { fontSize: 11, fontWeight: '800', marginTop: 2 },
+  freshnessLive: { color: '#86EFAC' },
+  freshnessFresh: { color: '#BBF7D0' },
+  freshnessStale: { color: '#FDE047' },
+  freshnessOutdated: { color: colors.textSecondary },
   trustRow: { marginHorizontal: 16, marginTop: 10, alignItems: 'flex-end' },
   trustText: { fontSize: 12, fontWeight: '800' },
   trustHigh: { color: '#86EFAC' },
@@ -454,19 +621,29 @@ const styles = StyleSheet.create({
   answerCta: {
     marginHorizontal: 16,
     marginTop: 16,
-    backgroundColor: colors.electric,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    shadowColor: '#3B82F6',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
   },
-  answerCtaText: { color: colors.white, fontWeight: '900', fontSize: 17 },
+  blockedBanner: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  blockedBannerOwner: {
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
+    borderColor: 'rgba(147, 197, 253, 0.45)',
+  },
+  blockedBannerText: {
+    color: colors.white,
+    fontWeight: '800',
+    fontSize: 14,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    lineHeight: 20,
+  },
   section: {
     color: colors.white,
     fontWeight: '900',
@@ -499,5 +676,18 @@ const styles = StyleSheet.create({
   answerStatus: { color: colors.electricBright, fontWeight: '800', marginBottom: 4, textAlign: 'right', fontSize: 15 },
   answerText: { color: colors.white, textAlign: 'right' },
   answerMeta: { color: colors.textSecondary, marginTop: 6, fontSize: 12, textAlign: 'right' },
+  answerActions: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  answerActionLink: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+  },
+  answerActionSep: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
   muted: { color: colors.textSecondary, marginHorizontal: 16, textAlign: 'right' },
 });

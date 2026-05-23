@@ -18,3 +18,18 @@ export function formatRelativeTimeHe(iso: string, nowMs = Date.now()): string {
   if (d === 1) return 'לפני יום';
   return `לפני ${d} ימים`;
 }
+
+export type FreshnessLevel = 'live' | 'fresh' | 'stale' | 'outdated';
+
+export function freshnessLabelHe(
+  iso: string,
+  nowMs = Date.now(),
+): { label: string; level: FreshnessLevel } {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return { label: 'לא עדכני', level: 'outdated' };
+  const min = Math.max(0, Math.floor((nowMs - t) / 60_000));
+  if (min <= 30) return { label: 'חי עכשיו', level: 'live' };
+  if (min <= 180) return { label: 'עדכני', level: 'fresh' };
+  if (min <= 720) return { label: 'ישן יחסית', level: 'stale' };
+  return { label: 'לא עדכני', level: 'outdated' };
+}

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -46,5 +47,11 @@ export class DropsController {
   @UseGuards(AuthGuard)
   create(@Req() req: Request, @Body() dto: CreateDropDto) {
     return this.drops.create(String(req.user!._id), dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard)
+  closeOwn(@Param('id') id: string, @Req() req: Request) {
+    return this.drops.closeOwn(id, String(req.user!._id));
   }
 }

@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +10,10 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MapStackParamList } from '../navigation/RootNavigator';
 import { colors } from '../theme/colors';
+import { palette } from '../theme/theme';
+import { PressableScale } from '../components/ui/PressableScale';
+import { Button } from '../components/ui/Button';
+import { tapLight, notifySuccess, notifyError } from '../lib/haptics';
 import type { DropCategory } from '../types/api';
 import { createDrop, ensureAnonymousSession } from '../lib/api';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
@@ -22,8 +24,8 @@ import { categoryMarkerIcon } from '../lib/categories';
 type Props = NativeStackScreenProps<MapStackParamList, 'CreateDrop'>;
 
 const CATEGORIES: { id: DropCategory; label: string }[] = [
-  { id: 'QUEUE', label: 'תור' },
   { id: 'PARKING', label: 'חניה' },
+  { id: 'QUEUE', label: 'תור' },
   { id: 'CROWD', label: 'עומס' },
   { id: 'INCIDENT', label: 'אירוע' },
   { id: 'PRODUCT', label: 'מוצר' },
@@ -118,6 +120,7 @@ export function CreateDropScreen({ navigation, route }: Props) {
         ttlHours: 24,
       });
     } catch (e) {
+      notifyError();
       Alert.alert('לא נשלח', apiUserMessageHeAuto(e));
       setBusy(false);
       return;
@@ -127,6 +130,7 @@ export function CreateDropScreen({ navigation, route }: Props) {
 
     if (!drop) return;
 
+    notifySuccess();
     navigation.navigate({
       name: 'Map',
       params: {
@@ -181,17 +185,22 @@ export function CreateDropScreen({ navigation, route }: Props) {
           const on = c.id === category;
           const icon = categoryMarkerIcon[c.id];
           return (
-            <Pressable
+            <PressableScale
               key={c.id}
-              onPress={() => setCategory(c.id)}
+              haptic="none"
+              onPress={() => {
+                tapLight();
+                setCategory(c.id);
+              }}
               style={[styles.chip, on && styles.chipOn]}
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={c.label}
+              accessibilityState={{ selected: on }}
             >
               <Text style={styles.chipIcon}>{icon}</Text>
               <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
-            </Pressable>
+            </PressableScale>
           );
         })}
       </View>
@@ -201,14 +210,16 @@ export function CreateDropScreen({ navigation, route }: Props) {
           <Text style={styles.suggestLabel}>רעיונות לשאלה לפי הקטגוריה</Text>
           <View style={styles.suggestWrap}>
             {suggestions.map((text) => (
-              <Pressable
+              <PressableScale
                 key={text}
                 style={styles.suggestionChip}
                 onPress={() => setQuestion(text)}
                 disabled={busy}
+                accessibilityRole="button"
+                accessibilityLabel={`השתמש בשאלה: ${text}`}
               >
                 <Text style={styles.suggestionText}>{text}</Text>
-              </Pressable>
+              </PressableScale>
             ))}
           </View>
         </>
@@ -229,17 +240,17 @@ export function CreateDropScreen({ navigation, route }: Props) {
         רק מי שנמצא בערך {radiusMeters} מ׳ מהנקודה יקבל את השאלה כדי לענות מהשטח.
       </Text>
 
-      <Pressable
-        style={[styles.cta, !canSubmit && styles.ctaDisabled]}
+      <Text style={styles.safetyHint}>
+        אל תפרסם מידע אישי, תוכן פוגעני, מידע מסוכן או דברים שאינך בטוח בהם.
+      </Text>
+
+      <Button
+        label="שלח לאנשים באזור"
+        icon="paper-plane"
         onPress={submit}
+        loading={busy}
         disabled={!canSubmit}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.white} />
-        ) : (
-          <Text style={styles.ctaText}>שלח לאנשים באזור</Text>
-        )}
-      </Pressable>
+      />
 
       {!canSubmit && !busy ? (
         <Text style={styles.blocked}>{disabledReasonHe}</Text>
@@ -392,22 +403,16 @@ const styles = StyleSheet.create({
   chipIcon: { fontSize: 13 },
   chipText: { color: colors.textMuted, fontWeight: '700', fontSize: 13 },
   chipTextOn: { color: colors.white },
-  cta: {
-    backgroundColor: colors.electric,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    shadowColor: '#3B82F6',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-    marginTop: 6,
+  safetyHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
-  ctaDisabled: { opacity: 0.45 },
-  ctaText: { color: colors.white, fontWeight: '900', fontSize: 16 },
   blocked: {
     color: colors.textMuted,
     fontSize: 12,

@@ -12,6 +12,7 @@ export enum DropStatus {
   ACTIVE = 'ACTIVE',
   EXPIRED = 'EXPIRED',
   RESOLVED = 'RESOLVED',
+  CLOSED = 'CLOSED',
 }
 
 /**

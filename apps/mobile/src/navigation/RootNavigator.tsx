@@ -1,8 +1,8 @@
-import { Platform, StyleSheet, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { AppTabBar } from '../components/ui/AppTabBar';
 import type { Drop } from '../types/api';
 import { MapScreen } from '../screens/MapScreen';
 import { CreateDropScreen } from '../screens/CreateDropScreen';
@@ -10,11 +10,14 @@ import { DropDetailsScreen } from '../screens/DropDetailsScreen';
 import { AnswerDropScreen } from '../screens/AnswerDropScreen';
 import { LiveFeedScreen } from '../screens/LiveFeedScreen';
 import { MyQuestionsScreen } from '../screens/MyQuestionsScreen';
+import { AboutScreen } from '../screens/AboutScreen';
+import { ReportContentScreen } from '../screens/ReportContentScreen';
 
 /** Screens shared between מפה and השאלות שלי flows. */
 export type DropFlowParamList = {
   DropDetails: { dropId: string; cachedDrop?: Drop };
   AnswerDrop: { dropId: string; cachedDrop?: Drop };
+  ReportContent: { targetType: 'drop' | 'answer'; targetId: string };
 };
 
 export type MapStackParamList = {
@@ -30,7 +33,10 @@ export type NearbyStackParamList = {
   NearbyFeed: undefined;
 };
 
-export type MyStackParamList = { MyQuestions: undefined } & DropFlowParamList;
+export type MyStackParamList = {
+  MyQuestions: undefined;
+  About: undefined;
+} & DropFlowParamList;
 
 export type RootTabParamList = {
   MapStack: NavigatorScreenParams<MapStackParamList>;
@@ -79,6 +85,11 @@ function MapNavigator() {
         component={AnswerDropScreen}
         options={{ title: 'תשובה מהמיקום' }}
       />
+      <MapStackNav.Screen
+        name="ReportContent"
+        component={ReportContentScreen}
+        options={{ title: 'דיווח על תוכן', presentation: 'modal' }}
+      />
     </MapStackNav.Navigator>
   );
 }
@@ -116,87 +127,33 @@ function MyNavigator() {
         component={AnswerDropScreen}
         options={{ title: 'תשובה מהמיקום' }}
       />
+      <MyStackNav.Screen
+        name="About"
+        component={AboutScreen}
+        options={{ title: 'מידע, פרטיות ובטיחות' }}
+      />
+      <MyStackNav.Screen
+        name="ReportContent"
+        component={ReportContentScreen}
+        options={{ title: 'דיווח על תוכן', presentation: 'modal' }}
+      />
     </MyStackNav.Navigator>
-  );
-}
-
-function tabBarLabel(routeName: keyof RootTabParamList, focused: boolean) {
-  const map: Record<keyof RootTabParamList, string> = {
-    MapStack: 'מפה',
-    NearbyStack: 'בקשות לידך',
-    MyStack: 'השאלות שלי',
-  };
-  return (
-    <Text
-      style={[
-        styles.tabLabel,
-        focused ? styles.tabLabelFocused : styles.tabLabelIdle,
-      ]}
-      numberOfLines={1}
-    >
-      {map[routeName]}
-    </Text>
   );
 }
 
 export function RootNavigator() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <AppTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarStyle: {
-          backgroundColor: colors.navyMuted,
-          borderTopColor: 'rgba(148,163,184,0.22)',
-          height: Platform.select({ ios: 84, default: 72 }),
-          paddingBottom: Platform.select({ ios: 26, default: 12 }),
-          paddingTop: 6,
-        },
-        tabBarShowLabel: true,
       }}
       initialRouteName="MapStack"
     >
-      <Tab.Screen
-        name="MapStack"
-        component={MapNavigator}
-        options={{
-          tabBarLabel: ({ focused }) => tabBarLabel('MapStack', focused),
-          tabBarIcon: () => <Text style={styles.tabEmoji}>🗺</Text>,
-        }}
-      />
-      <Tab.Screen
-        name="NearbyStack"
-        component={NearbyNavigator}
-        options={{
-          tabBarLabel: ({ focused }) => tabBarLabel('NearbyStack', focused),
-          tabBarIcon: () => <Text style={styles.tabEmoji}>⚡️</Text>,
-        }}
-      />
-      <Tab.Screen
-        name="MyStack"
-        component={MyNavigator}
-        options={{
-          tabBarLabel: ({ focused }) => tabBarLabel('MyStack', focused),
-          tabBarIcon: () => <Text style={styles.tabEmoji}>📥</Text>,
-        }}
-      />
+      <Tab.Screen name="MapStack" component={MapNavigator} />
+      <Tab.Screen name="NearbyStack" component={NearbyNavigator} />
+      <Tab.Screen name="MyStack" component={MyNavigator} />
     </Tab.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 2,
-    maxWidth: 120,
-    writingDirection: 'rtl',
-  },
-  tabLabelFocused: { color: colors.electricBright },
-  tabLabelIdle: { color: colors.textMuted },
-  tabEmoji: {
-    fontSize: 22,
-    lineHeight: 26,
-  },
-});

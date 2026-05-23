@@ -301,3 +301,27 @@ export async function fetchAnswers(dropId: string) {
     logParams: { dropId },
   });
 }
+
+export async function closeOwnDrop(id: string) {
+  return request<Drop>(`/drops/${id}`, {
+    method: 'DELETE',
+    endpointName: 'close_own_drop',
+    logParams: { id },
+    retry: false,
+  });
+}
+
+export async function postReport(body: {
+  targetType: 'drop' | 'answer';
+  targetId: string;
+  reason: string;
+  details?: string;
+}) {
+  return request<{ ok: boolean }>(`/reports`, {
+    method: 'POST',
+    endpointName: 'post_report',
+    json: body,
+    logParams: { targetType: body.targetType, targetId: body.targetId },
+    retry: false,
+  });
+}

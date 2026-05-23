@@ -7,7 +7,7 @@ export type DropCategory =
   | 'SAFETY'
   | 'OTHER';
 
-export type DropStatus = 'ACTIVE' | 'EXPIRED' | 'RESOLVED';
+export type DropStatus = 'ACTIVE' | 'EXPIRED' | 'RESOLVED' | 'CLOSED';
 
 /** Must match server `QuickStatus` and `answerOptions` keys. */
 export type QuickStatus =

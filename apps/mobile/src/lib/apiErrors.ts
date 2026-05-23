@@ -71,4 +71,4 @@ export function apiUserMessageHe(err: unknown, endpoint: string): string {
 export const LOCATION_PERMISSION_MESSAGE_HE =
   'כדי להציג נתונים רלוונטיים לאזור שלך, אפשר גישת מיקום בהגדרות המכשיר.';
 
-export const NO_NEARBY_QUESTIONS_MESSAGE_HE = 'אין שאלות פעילות בקרבת מקום כרגע.';
+export const NO_NEARBY_QUESTIONS_MESSAGE_HE = 'שקט באזור הזה כרגע · עוקבים בזמן אמת ונעדכן כשמשהו קורה.';

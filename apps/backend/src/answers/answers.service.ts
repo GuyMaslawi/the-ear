@@ -26,6 +26,9 @@ export class AnswersService {
 
   async create(dropId: string, userId: string, dto: CreateAnswerDto) {
     const drop = await this.drops.getRawDropForAnswer(dropId, userId);
+    if (String(drop.createdBy) === String(userId)) {
+      throw new ForbiddenException('Cannot answer your own question');
+    }
     const dropPoint = drop.location;
     const answerPoint = this.geo.point(dto.lat, dto.lng);
     const distance = this.geo.distanceMeters(dropPoint, answerPoint);

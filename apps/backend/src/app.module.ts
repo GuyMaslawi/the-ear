@@ -8,6 +8,7 @@ import { AnswersModule } from './answers/answers.module';
 import { GeoModule } from './geo/geo.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AiSummaryModule } from './ai-summary/ai-summary.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AiSummaryModule } from './ai-summary/ai-summary.module';
     AuthModule,
     DropsModule,
     AnswersModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

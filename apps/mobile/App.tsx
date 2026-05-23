@@ -17,6 +17,13 @@ if (
 
 I18nManager.allowRTL(true);
 I18nManager.swapLeftAndRightInRTL(true);
+// Force RTL so Hebrew layout is correct on Android devices whose system language is English.
+// Guarded: only flipped once (when current state differs), so we don't loop-restart on every launch.
+// NOTE: On first install (or first run after this change), Android will restart the app once
+// to apply the new layout direction. This is expected, not a crash.
+if (!I18nManager.isRTL) {
+  I18nManager.forceRTL(true);
+}
 
 const navTheme = {
   ...DefaultTheme,

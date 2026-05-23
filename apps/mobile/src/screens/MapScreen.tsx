@@ -17,7 +17,12 @@ import MapView, {
   Region,
 } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressableScale } from '../components/ui/PressableScale';
+import { palette } from '../theme/theme';
+import { tapLight } from '../lib/haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import type { MapStackParamList } from '../navigation/RootNavigator';
@@ -42,9 +47,10 @@ import { connectSocket, disconnectSocket, getSocket } from '../lib/socket';
 import { categoryHe } from '../lib/categories';
 import { formatRelativeTimeHe } from '../lib/relativeTime';
 import type { Drop } from '../types/api';
-
-const TEL_AVIV = { lat: 32.0853, lng: 34.7818 };
-const SHEET_MAX_RATIO = 0.38;
+import { DEV_FALLBACK_REGION, VISIBILITY_RADIUS_METERS } from '../lib/devLocation';
+import { useHiddenContent } from '../lib/hiddenContent';
+import { darkMapStyle } from '../lib/mapStyle';
+const SHEET_MAX_RATIO = 0.55;
 /** Space below safe area + topBar (dual-line brand) before overlay banners */
 const MAP_ERROR_BANNER_TOP_OFFSET = 68;
 const REGION_LOAD_DEBOUNCE_MS = 420;
@@ -103,8 +109,8 @@ export function MapScreen({ navigation }: Props) {
   const { height: winH } = Dimensions.get('window');
 
   const [region, setRegion] = useState<Region>({
-    latitude: TEL_AVIV.lat,
-    longitude: TEL_AVIV.lng,
+    latitude: DEV_FALLBACK_REGION.lat,
+    longitude: DEV_FALLBACK_REGION.lng,
     latitudeDelta: 0.06,
     longitudeDelta: 0.06,
   });
@@ -128,14 +134,18 @@ export function MapScreen({ navigation }: Props) {
 
   regionRef.current = region;
 
+  const { hiddenDropIds } = useHiddenContent();
+
   const drops = useMemo(() => {
     const map = new Map<string, Drop>();
     for (const d of apiDrops) map.set(d.id, d);
     for (const d of Object.values(extraById)) map.set(d.id, d);
-    return Array.from(map.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-  }, [apiDrops, extraById]);
+    return Array.from(map.values())
+      .filter((d) => !hiddenDropIds.has(d.id))
+      .sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  }, [apiDrops, extraById, hiddenDropIds]);
 
   useEffect(() => {
     apiDropsRef.current = apiDrops;
@@ -210,7 +220,7 @@ export function MapScreen({ navigation }: Props) {
       setNearbyUserMessage(null);
     }
     try {
-      const list = await fetchNearbyDrops(lat, lng, 2800);
+      const list = await fetchNearbyDrops(lat, lng, VISIBILITY_RADIUS_METERS);
       setApiDrops(list);
       setNearbyUserMessage(null);
       setNearbyPhase(list.length === 0 ? 'empty' : 'success');
@@ -275,6 +285,11 @@ export function MapScreen({ navigation }: Props) {
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
 
+    const onNewDropNearby = () => {
+      const r = regionRef.current;
+      void loadDrops(r.latitude, r.longitude);
+    };
+
     (async () => {
       try {
         await ensureAnonymousSession();
@@ -288,6 +303,7 @@ export function MapScreen({ navigation }: Props) {
 
       try {
         await connectSocket();
+        if (!cancelled) getSocket()?.on('new_drop_nearby', onNewDropNearby);
       } catch {
         /* socket optional */
       }
@@ -296,24 +312,32 @@ export function MapScreen({ navigation }: Props) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled) return;
         if (status !== 'granted') {
+          console.log(
+            `[location] permission=denied source=denied lat=${DEV_FALLBACK_REGION.lat} lng=${DEV_FALLBACK_REGION.lng}`,
+          );
           setLocationPermissionDenied(true);
           setToast(LOCATION_PERMISSION_MESSAGE_HE);
-          await loadDrops(TEL_AVIV.lat, TEL_AVIV.lng);
+          await loadDrops(DEV_FALLBACK_REGION.lat, DEV_FALLBACK_REGION.lng);
           return;
         }
         setLocationPermissionDenied(false);
 
-        let lat = TEL_AVIV.lat;
-        let lng = TEL_AVIV.lng;
+        let lat = DEV_FALLBACK_REGION.lat;
+        let lng = DEV_FALLBACK_REGION.lng;
+        let gotGps = false;
         try {
           const first = await Location.getCurrentPositionAsync({});
           lat = first.coords.latitude;
           lng = first.coords.longitude;
+          gotGps = true;
         } catch {
           if (!cancelled) {
             setToast('לא הצלחנו לקרוא מיקום מהמכשיר — מציגים נתונים לאזור ברירת מחדל.');
           }
         }
+        console.log(
+          `[location] permission=granted source=${gotGps ? 'gps' : 'unavailable'} lat=${lat} lng=${lng}`,
+        );
 
         setRegion((r) => ({
           ...r,
@@ -336,7 +360,7 @@ export function MapScreen({ navigation }: Props) {
       } catch {
         if (!cancelled) {
           setToast('בעיה בגישה למיקום — מנסים לטעון נתונים לאזור ברירת מחדל.');
-          await loadDrops(TEL_AVIV.lat, TEL_AVIV.lng);
+          await loadDrops(DEV_FALLBACK_REGION.lat, DEV_FALLBACK_REGION.lng);
         }
       }
     })();
@@ -344,6 +368,7 @@ export function MapScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
       sub?.remove();
+      getSocket()?.off('new_drop_nearby', onNewDropNearby);
       disconnectSocket();
     };
   }, [loadDrops]);
@@ -358,19 +383,6 @@ export function MapScreen({ navigation }: Props) {
       /* keep last known coords; PATCH is non-critical */
     }
   }
-
-  useEffect(() => {
-    const s = getSocket();
-    if (!s) return;
-    const onNew = () => {
-      const r = regionRef.current;
-      void loadDrops(r.latitude, r.longitude);
-    };
-    s.on('new_drop_nearby', onNew);
-    return () => {
-      s.off('new_drop_nearby', onNew);
-    };
-  }, [loadDrops]);
 
   const openAsk = useCallback(() => {
     const pin = selectedPoint;
@@ -447,6 +459,7 @@ export function MapScreen({ navigation }: Props) {
             showsUserLocation
             showsMyLocationButton={false}
             userInterfaceStyle="dark"
+            customMapStyle={Platform.OS === 'android' ? darkMapStyle : undefined}
             mapPadding={{ top: 0, right: 0, bottom: sheetBottomPx, left: 0 }}
           >
             {drops.map((d) => {
@@ -498,18 +511,34 @@ export function MapScreen({ navigation }: Props) {
       )}
 
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.brandCol}>
-          <Text style={styles.brandHe}>האוזן</Text>
-          <Text style={styles.brandEn}>The Ear</Text>
+        <View style={styles.brandPill}>
+          <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.brandDot} />
+          <View style={styles.brandCol}>
+            <Text style={styles.brandHe}>האוזן</Text>
+            <Text style={styles.brandEn}>The Ear</Text>
+          </View>
         </View>
         <View style={styles.topRight}>
-          <Pressable
-            onPress={() => setListOnly((v) => !v)}
-            style={styles.toggle}
+          <PressableScale
+            haptic="none"
+            onPress={() => {
+              tapLight();
+              setListOnly((v) => !v);
+            }}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={listOnly ? 'הצג מפה' : 'הצג רשימה'}
+            style={styles.toggle}
           >
+            <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
+            <Ionicons
+              name={listOnly ? 'map' : 'list'}
+              size={15}
+              color={colors.electricBright}
+            />
             <Text style={styles.toggleText}>{listOnly ? 'מפה' : 'רשימה'}</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </View>
 
@@ -743,9 +772,37 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     zIndex: 10,
   },
-  brandCol: {},
-  brandHe: { color: colors.white, fontSize: 22, fontWeight: '800' },
-  brandEn: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  brandPill: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.hairlineStrong,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(8,15,31,0.4)',
+  },
+  brandDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: palette.live,
+    shadowColor: palette.live,
+    shadowOpacity: 0.7,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
+  },
+  brandCol: { alignItems: 'flex-end' },
+  brandHe: { color: colors.white, fontSize: 19, fontWeight: '900', lineHeight: 22 },
+  brandEn: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
   topRight: {
     alignItems: 'flex-end',
     gap: 8,
@@ -753,14 +810,18 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   toggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.hairlineStrong,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(8,15,31,0.4)',
   },
-  toggleText: { color: colors.electricBright, fontWeight: '700', fontSize: 12 },
+  toggleText: { color: colors.electricBright, fontWeight: '800', fontSize: 13 },
 
   previewWrap: {
     position: 'absolute',

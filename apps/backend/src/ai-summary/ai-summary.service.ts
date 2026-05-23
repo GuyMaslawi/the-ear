@@ -4,25 +4,25 @@ import type { AnswerDocument } from '../answers/schemas/answer.schema';
 
 /** Human-readable gist per quick-reply for the MVP summary line. */
 const STATUS_MOOD: Record<string, string> = {
-  [QuickStatus.EMPTY]: 'quiet / sparse',
-  [QuickStatus.SHORT]: 'short lines / light traffic',
-  [QuickStatus.NORMAL]: 'normal',
-  [QuickStatus.BUSY]: 'busy',
-  [QuickStatus.VERY_BUSY]: 'very busy',
-  [QuickStatus.PLENTY]: 'plenty available',
-  [QuickStatus.SOME]: 'somewhat limited',
-  [QuickStatus.HARD]: 'hard to find',
-  [QuickStatus.NONE]: 'none / very scarce',
-  [QuickStatus.IN_STOCK]: 'in stock',
-  [QuickStatus.LOW_STOCK]: 'low stock',
-  [QuickStatus.OUT_OF_STOCK]: 'out of stock',
-  [QuickStatus.CALM]: 'calm',
-  [QuickStatus.ACTIVITY]: 'notable activity',
-  [QuickStatus.POLICE]: 'police presence noted',
-  [QuickStatus.UNSAFE]: 'safety concerns noted',
-  [QuickStatus.YES]: 'mostly yes / positive',
-  [QuickStatus.NO]: 'mostly no / negative',
-  [QuickStatus.UNKNOWN]: 'mixed or unclear',
+  [QuickStatus.EMPTY]: 'ריק / שקט',
+  [QuickStatus.SHORT]: 'תור קצר / עומס קל',
+  [QuickStatus.NORMAL]: 'רגיל',
+  [QuickStatus.BUSY]: 'עמוס',
+  [QuickStatus.VERY_BUSY]: 'עמוס מאוד',
+  [QuickStatus.PLENTY]: 'יש מקום בשפע',
+  [QuickStatus.SOME]: 'מוגבל חלקית',
+  [QuickStatus.HARD]: 'קשה למצוא',
+  [QuickStatus.NONE]: 'אין כמעט בכלל',
+  [QuickStatus.IN_STOCK]: 'יש במלאי',
+  [QuickStatus.LOW_STOCK]: 'מעט במלאי',
+  [QuickStatus.OUT_OF_STOCK]: 'אזל מהמלאי',
+  [QuickStatus.CALM]: 'שקט',
+  [QuickStatus.ACTIVITY]: 'יש פעילות בולטת',
+  [QuickStatus.POLICE]: 'נוכחות משטרה',
+  [QuickStatus.UNSAFE]: 'דווח על חשש לבטיחות',
+  [QuickStatus.YES]: 'רוב התשובות חיוביות',
+  [QuickStatus.NO]: 'רוב התשובות שליליות',
+  [QuickStatus.UNKNOWN]: 'מעורב או לא ברור',
 };
 
 @Injectable()
@@ -35,7 +35,7 @@ export class AiSummaryService {
     confidenceScore: number;
   } {
     if (!answers.length) {
-      return { text: 'No answers yet.', confidenceScore: 0 };
+      return { text: 'עדיין אין תשובות מהשטח.', confidenceScore: 0 };
     }
 
     const counts: Record<string, number> = {};
@@ -64,8 +64,12 @@ export class AiSummaryService {
     const confidenceScore =
       share >= 0.6 && total >= 3 ? 0.85 : share >= 0.45 ? 0.55 : 0.35;
 
-    const mood = STATUS_MOOD[dominant] ?? 'mixed signals';
-    const text = `Most users report: ${mood}. ${recent} answers in last 2 minutes.`;
+    const mood = STATUS_MOOD[dominant] ?? 'מעורב או לא ברור';
+    const recentLine =
+      recent === 1
+        ? 'תשובה אחת בשתי הדקות האחרונות.'
+        : `${recent} תשובות בשתי הדקות האחרונות.`;
+    const text = `רוב המשתמשים מדווחים: ${mood}. ${recentLine}`;
 
     return { text, confidenceScore };
   }

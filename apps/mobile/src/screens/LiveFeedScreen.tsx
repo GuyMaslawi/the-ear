@@ -13,6 +13,8 @@ import {
   type ViewToken,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +22,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NearbyStackParamList, RootTabParamList } from '../navigation/RootNavigator';
 import { useUserCoords } from '../hooks/useUserCoords';
 import { colors } from '../theme/colors';
+import { gradients, palette } from '../theme/theme';
+import { PressableScale } from '../components/ui/PressableScale';
+import { Button } from '../components/ui/Button';
+import { tapLight, tapMedium, notifySuccess, notifyError } from '../lib/haptics';
 import { ensureAnonymousSession, fetchNearbyDrops, postAnswer } from '../lib/api';
 import { connectSocket, getSocket } from '../lib/socket';
 import {
@@ -33,6 +39,9 @@ import { formatRelativeTimeHe } from '../lib/relativeTime';
 import { distanceMeters } from '../lib/geo';
 import { getAnswerOptions } from '../lib/answerOptions';
 import type { AnswerOption, Drop, QuickStatus } from '../types/api';
+import { VISIBILITY_RADIUS_METERS } from '../lib/devLocation';
+import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
+import { useHiddenContent } from '../lib/hiddenContent';
 
 type Props = NativeStackScreenProps<NearbyStackParamList, 'NearbyFeed'>;
 
@@ -207,17 +216,22 @@ function DropCard({
       ) : (
         <View style={styles.buttonsWrap}>
           {options.map((opt) => (
-            <Pressable
+            <PressableScale
               key={opt.key}
+              haptic="none"
+              scaleTo={0.93}
               style={[styles.answerBtn, { backgroundColor: opt.color }]}
+              accessibilityRole="button"
+              accessibilityLabel={`${opt.label} — ענה על השאלה`}
               onPress={() => {
+                tapMedium();
                 playFeedback();
                 onAnswer(drop.id, opt.key);
               }}
             >
               <Text style={styles.answerBtnIcon}>{opt.icon}</Text>
               <Text style={styles.answerBtnText}>{opt.label}</Text>
-            </Pressable>
+            </PressableScale>
           ))}
         </View>
       )}
@@ -235,9 +249,9 @@ export function LiveFeedScreen({ navigation }: Props) {
   const {
     lat,
     lng,
+    source: coordsSource,
     refresh: refreshCoords,
     permissionDenied,
-    locationUnavailable,
   } = useUserCoords();
 
   const [drops, setDrops] = useState<Drop[]>([]);
@@ -257,7 +271,9 @@ export function LiveFeedScreen({ navigation }: Props) {
   const [visibleIndexState, setVisibleIndexState] = useState(0);
   const sortInitial = useRef(true);
 
-  const cardHeight = WIN_H;
+  /** Measured FlatList viewport (window height minus the bottom tab bar). */
+  const [viewportH, setViewportH] = useState(WIN_H);
+  const cardHeight = viewportH;
 
   useEffect(() => {
     dropsRef.current = drops;
@@ -276,7 +292,7 @@ export function LiveFeedScreen({ navigation }: Props) {
       }
       try {
         await ensureAnonymousSession();
-        const list = await fetchNearbyDrops(lat, lng, 2800);
+        const list = await fetchNearbyDrops(lat, lng, VISIBILITY_RADIUS_METERS);
         setDrops(list);
         setFetchError(false);
         setListErrorMsg(null);
@@ -343,8 +359,21 @@ export function LiveFeedScreen({ navigation }: Props) {
     });
   };
 
+  const { hiddenDropIds } = useHiddenContent();
+
+  const answerable = useMemo(() => {
+    return drops.filter(
+      (d) =>
+        !hiddenDropIds.has(d.id) &&
+        canUserAnswerDrop({
+          drop: d,
+          userCoords: { lat, lng, source: coordsSource },
+        }).canAnswer,
+    );
+  }, [drops, lat, lng, coordsSource, hiddenDropIds]);
+
   const sorted = useMemo(() => {
-    const arr = [...drops];
+    const arr = [...answerable];
     switch (sortMode) {
       case 'recent':
         arr.sort(
@@ -368,7 +397,7 @@ export function LiveFeedScreen({ navigation }: Props) {
         break;
     }
     return arr;
-  }, [drops, sortMode, lat, lng]);
+  }, [answerable, sortMode, lat, lng]);
 
   const cycleSortMode = useCallback(() => {
     setSortMode((prev) => {
@@ -419,6 +448,26 @@ export function LiveFeedScreen({ navigation }: Props) {
           );
           return;
         }
+        const drop = dropsRef.current.find((d) => d.id === dropId);
+        if (drop) {
+          const elig = canUserAnswerDrop({
+            drop,
+            userCoords: {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              source: 'gps',
+            },
+          });
+          if (!elig.canAnswer) {
+            setAnsweredMap((prev) => {
+              const next = { ...prev };
+              delete next[dropId];
+              return next;
+            });
+            Alert.alert('לא ניתן לענות', blockedReasonHe(elig.reason, elig.distanceMeters));
+            return;
+          }
+        }
         try {
           await postAnswer(dropId, {
             text: '—',
@@ -440,6 +489,7 @@ export function LiveFeedScreen({ navigation }: Props) {
             d.id === dropId ? { ...d, answerCount: d.answerCount + 1 } : d,
           ),
         );
+        notifySuccess();
       } catch {
         setAnsweredMap((prev) => {
           const next = { ...prev };
@@ -504,11 +554,19 @@ export function LiveFeedScreen({ navigation }: Props) {
   const bannerError = fetchError && sorted.length > 0;
   const showSkeleton = loadingInitial && sorted.length === 0;
 
+  const missingLocation = coordsSource === 'denied' || coordsSource === 'unavailable';
+  const centerMissingLocation =
+    !loadingInitial &&
+    sorted.length === 0 &&
+    listPhase !== 'error' &&
+    !refreshing &&
+    missingLocation;
   const centerEmptyOk =
     !loadingInitial &&
     sorted.length === 0 &&
     listPhase !== 'error' &&
-    !refreshing;
+    !refreshing &&
+    !missingLocation;
   const centerErrorOnly =
     !loadingInitial && sorted.length === 0 && listPhase === 'error' && !refreshing;
 
@@ -516,16 +574,46 @@ export function LiveFeedScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
+      <LinearGradient
+        colors={gradients.backdrop}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={gotoMapTab} hitSlop={12} accessibilityRole="button">
+        <BlurView
+          intensity={40}
+          tint="dark"
+          style={StyleSheet.absoluteFill}
+        />
+        <Pressable
+          onPress={() => {
+            tapLight();
+            gotoMapTab();
+          }}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="מעבר למפה"
+        >
           <Text style={styles.mapTabHint}>מפה</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>מה קורה עכשיו</Text>
-        <Pressable onPress={cycleSortMode} hitSlop={8}>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          מה קורה עכשיו
+        </Text>
+        <PressableScale
+          haptic="none"
+          onPress={() => {
+            tapLight();
+            cycleSortMode();
+          }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`מיון: ${SORT_LABELS[sortMode]}. הקש להחלפה`}
+        >
           <View style={styles.sortChip}>
             <Text style={styles.sortChipText}>{SORT_LABELS[sortMode]}</Text>
           </View>
-        </Pressable>
+        </PressableScale>
       </View>
 
       {bannerError ? (
@@ -566,32 +654,47 @@ export function LiveFeedScreen({ navigation }: Props) {
             <Text style={styles.softStandSub}>
               {listErrorMsg ?? 'בדוק חיבור ונסה שוב.'}
             </Text>
-            <Pressable style={styles.softStandCta} onPress={() => loadNearby('pull')}>
-              <Text style={styles.softStandCtaText}>נסה שוב</Text>
-            </Pressable>
+            <Button
+              label="נסה שוב"
+              icon="refresh"
+              onPress={() => loadNearby('pull')}
+              style={styles.standCtaSpacing}
+            />
           </View>
           <Pressable hitSlop={10} onPress={refreshCoords}>
             <Text style={styles.geoGhost}>עדיין משתמשים במיקום אחר?</Text>
           </Pressable>
         </View>
+      ) : centerMissingLocation ? (
+        <View style={[styles.centerCardWrap, { paddingTop: insets.top + 64 }]}>
+          <View style={styles.softStandCardPositive}>
+            <Text style={styles.softStandTitleLight}>צריך מיקום פעיל כדי לענות</Text>
+            <Text style={[styles.softStandSubMuted, { marginTop: 10 }]}>
+              {permissionDenied
+                ? LOCATION_PERMISSION_MESSAGE_HE
+                : 'לא הצלחנו לדייק מיקום — בדוק ש-GPS פעיל ונסה שוב.'}
+            </Text>
+            <Button
+              label="אפשר מיקום"
+              icon="navigate"
+              onPress={refreshCoords}
+              style={styles.standCtaSpacing}
+            />
+          </View>
+        </View>
       ) : centerEmptyOk ? (
         <View style={[styles.centerCardWrap, { paddingTop: insets.top + 64 }]}>
           <View style={styles.softStandCardPositive}>
             <Text style={styles.softStandTitleLight}>{NO_NEARBY_QUESTIONS_MESSAGE_HE}</Text>
-            {permissionDenied || locationUnavailable ? (
-              <Text style={[styles.softStandSubMuted, { marginTop: 10 }]}>
-                {permissionDenied
-                  ? LOCATION_PERMISSION_MESSAGE_HE
-                  : 'לא הצלחנו לדייק מיקום — הרשימה מבוססת על אזור ברירת מחדל.'}
-              </Text>
-            ) : (
-              <Text style={styles.softStandSubMuted}>
-                רוצה להיות הראשון ששואל משהו מהשטח?
-              </Text>
-            )}
-            <Pressable style={styles.softStandCtaPositive} onPress={openAsk}>
-              <Text style={styles.softStandCtaPositiveText}>שאל שאלה כאן</Text>
-            </Pressable>
+            <Text style={styles.softStandSubMuted}>
+              רוצה להיות הראשון ששואל משהו מהשטח?
+            </Text>
+            <Button
+              label="שאל שאלה כאן"
+              icon="add-circle"
+              onPress={openAsk}
+              style={styles.standCtaSpacing}
+            />
           </View>
         </View>
       ) : null}
@@ -620,6 +723,7 @@ export function LiveFeedScreen({ navigation }: Props) {
           data={sorted}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
+          onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
           pagingEnabled
           showsVerticalScrollIndicator={false}
           snapToAlignment="start"
@@ -671,8 +775,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 8,
-    backgroundColor: 'rgba(11, 20, 38, 0.92)',
+    paddingBottom: 10,
+    backgroundColor: 'rgba(8,15,31,0.55)',
+    overflow: 'hidden',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: palette.hairline,
   },
   mapTabHint: {
     color: colors.electricBright,
@@ -857,35 +964,8 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     fontWeight: '600',
   },
-  softStandCta: {
+  standCtaSpacing: {
     marginTop: 20,
-    alignSelf: 'stretch',
-    backgroundColor: colors.electric,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  softStandCtaText: {
-    color: colors.white,
-    fontWeight: '900',
-    fontSize: 16,
-  },
-  softStandCtaPositive: {
-    marginTop: 20,
-    alignSelf: 'stretch',
-    backgroundColor: colors.electric,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  softStandCtaPositiveText: {
-    color: colors.white,
-    fontWeight: '900',
-    fontSize: 16,
   },
 
   card: {

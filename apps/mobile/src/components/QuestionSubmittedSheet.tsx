@@ -6,9 +6,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Drop } from '../types/api';
 import { colors } from '../theme/colors';
+import { palette } from '../theme/theme';
+import { Button } from './ui/Button';
 
 type Props = {
   visible: boolean;
@@ -21,7 +24,11 @@ type Props = {
 function StatusRow({ done, label }: { done: boolean; label: string }) {
   return (
     <View style={styles.statusRow}>
-      <View style={[styles.statusDot, done && styles.statusDotDone]} />
+      <Ionicons
+        name={done ? 'checkmark-circle' : 'time'}
+        size={20}
+        color={done ? palette.success : palette.warning}
+      />
       <Text style={styles.statusLabel}>{label}</Text>
     </View>
   );
@@ -67,6 +74,10 @@ export function QuestionSubmittedSheet({
         >
           <View style={styles.handle} />
 
+          <View style={styles.successBadge}>
+            <Ionicons name="paper-plane" size={26} color={palette.onPrimary} />
+          </View>
+
           <Text style={styles.title}>השאלה נשלחה לאנשים באזור</Text>
           <Text style={styles.subtitle}>
             אנחנו מחפשים אנשים שיכולים לענות מהשטח.
@@ -81,22 +92,18 @@ export function QuestionSubmittedSheet({
             />
           </View>
 
-          <Pressable
-            style={styles.ctaPrimary}
+          <Button
+            label="פתח את השאלה"
+            icon="open"
             onPress={() => onOpenQuestion(drop)}
-            accessibilityRole="button"
-            accessibilityLabel="פתח את השאלה"
-          >
-            <Text style={styles.ctaPrimaryText}>פתח את השאלה</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.ctaSecondary}
+            style={styles.ctaSpacing}
+          />
+          <Button
+            label="חזור למפה"
+            icon="map"
+            variant="ghost"
             onPress={onBackToMap}
-            accessibilityRole="button"
-          >
-            <Text style={styles.ctaSecondaryText}>חזור למפה</Text>
-          </Pressable>
+          />
         </View>
       </View>
     </Modal>
@@ -165,17 +172,20 @@ const styles = StyleSheet.create({
     gap: 10,
     alignSelf: 'stretch',
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: 'rgba(148,163,184,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  statusDotDone: {
-    backgroundColor: '#22C55E',
-    borderColor: 'rgba(34,197,94,0.55)',
+  successBadge: {
+    alignSelf: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: palette.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: palette.primary,
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 12,
   },
   statusLabel: {
     flex: 1,
@@ -185,25 +195,5 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  ctaPrimary: {
-    alignSelf: 'stretch',
-    backgroundColor: colors.electric,
-    paddingVertical: 15,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    marginBottom: 10,
-  },
-  ctaPrimaryText: { color: colors.white, fontWeight: '900', fontSize: 16 },
-  ctaSecondary: {
-    alignSelf: 'stretch',
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  ctaSecondaryText: { color: colors.textMuted, fontWeight: '800', fontSize: 15 },
+  ctaSpacing: { marginBottom: 10 },
 });

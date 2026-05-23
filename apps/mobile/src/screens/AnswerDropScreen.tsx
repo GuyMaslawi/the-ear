@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,13 +9,19 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DropFlowParamList } from '../navigation/RootNavigator';
 import { colors } from '../theme/colors';
+import { palette } from '../theme/theme';
+import { PressableScale } from '../components/ui/PressableScale';
+import { Button } from '../components/ui/Button';
+import { tapLight, notifySuccess, notifyError } from '../lib/haptics';
 import type { AnswerOption, Drop, QuickStatus } from '../types/api';
 import { fetchDrop, postAnswer, ensureAnonymousSession } from '../lib/api';
 import { apiUserMessageHeAuto, LOCATION_PERMISSION_MESSAGE_HE } from '../lib/apiErrors';
 import { getAnswerOptions } from '../lib/answerOptions';
+import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
 
 type Props = NativeStackScreenProps<DropFlowParamList, 'AnswerDrop'>;
 
@@ -69,6 +74,7 @@ export function AnswerDropScreen({ navigation, route }: Props) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
+        notifyError();
         Alert.alert('מיקום', LOCATION_PERMISSION_MESSAGE_HE);
         return;
       }
@@ -76,10 +82,24 @@ export function AnswerDropScreen({ navigation, route }: Props) {
       try {
         pos = await Location.getCurrentPositionAsync({});
       } catch {
+        notifyError();
         Alert.alert(
           'מיקום',
           'לא הצלחנו לקרוא מיקום מהשטח. בדוק ש-GPS פעיל ונסה שוב.',
         );
+        return;
+      }
+      const elig = canUserAnswerDrop({
+        drop,
+        userCoords: {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          source: 'gps',
+        },
+      });
+      if (!elig.canAnswer) {
+        notifyError();
+        Alert.alert('לא ניתן לענות', blockedReasonHe(elig.reason, elig.distanceMeters));
         return;
       }
       try {
@@ -91,9 +111,11 @@ export function AnswerDropScreen({ navigation, route }: Props) {
           lng: pos.coords.longitude,
         });
       } catch (e) {
+        notifyError();
         Alert.alert('לא נשלח', apiUserMessageHeAuto(e));
         return;
       }
+      notifySuccess();
       navigation.goBack();
     } finally {
       setBusy(false);
@@ -114,12 +136,18 @@ export function AnswerDropScreen({ navigation, route }: Props) {
       <View style={styles.center}>
         <Text style={styles.centerTitle}>לא הצלחנו לטעון את השאלה</Text>
         <Text style={styles.centerMuted}>{loadError ?? 'נסה שוב בעוד רגע.'}</Text>
-        <Pressable style={styles.centerRetry} onPress={() => void loadFromApi()} hitSlop={8}>
-          <Text style={styles.centerRetryText}>נסה שוב</Text>
-        </Pressable>
-        <Pressable style={styles.centerGhost} onPress={() => navigation.goBack()} hitSlop={8}>
-          <Text style={styles.centerGhostText}>חזור</Text>
-        </Pressable>
+        <Button
+          label="נסה שוב"
+          icon="refresh"
+          onPress={() => void loadFromApi()}
+          fullWidth={false}
+        />
+        <Button
+          label="חזור"
+          variant="ghost"
+          onPress={() => navigation.goBack()}
+          fullWidth={false}
+        />
       </View>
     );
   }
@@ -142,10 +170,18 @@ export function AnswerDropScreen({ navigation, route }: Props) {
         {options.map((opt) => {
           const on = opt.key === selectedKey;
           return (
-            <Pressable
+            <PressableScale
               key={opt.key}
-              onPress={() => setSelectedKey(opt.key)}
+              haptic="none"
+              scaleTo={0.98}
+              onPress={() => {
+                tapLight();
+                setSelectedKey(opt.key);
+              }}
               disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={opt.label}
+              accessibilityState={{ selected: on, disabled: busy }}
               style={[
                 styles.quickBtn,
                 on && [styles.quickBtnOn, { borderColor: opt.color }],
@@ -155,7 +191,12 @@ export function AnswerDropScreen({ navigation, route }: Props) {
               <Text style={[styles.quickBtnText, on && styles.quickBtnTextOn]}>
                 {opt.label}
               </Text>
-            </Pressable>
+              <Ionicons
+                name={on ? 'checkmark-circle' : 'ellipse-outline'}
+                size={22}
+                color={on ? opt.color : palette.textMuted}
+              />
+            </PressableScale>
           );
         })}
       </View>
@@ -183,17 +224,14 @@ export function AnswerDropScreen({ navigation, route }: Props) {
         המיקום נשמר בקירוב בלבד לאימות, ולא מוצג למשתמשים אחרים.
       </Text>
 
-      <Pressable
-        style={[styles.cta, (busy || !selectedKey || options.length === 0) && styles.ctaDisabled]}
+      <Button
+        label="שלח תשובה"
+        icon="send"
+        variant="success"
         onPress={submit}
-        disabled={busy || !selectedKey || options.length === 0}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.white} />
-        ) : (
-          <Text style={styles.ctaText}>שלח תשובה</Text>
-        )}
-      </Pressable>
+        loading={busy}
+        disabled={!selectedKey || options.length === 0}
+      />
     </ScrollView>
   );
 }
@@ -222,25 +260,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
   },
-  centerRetry: {
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderRadius: 14,
-    backgroundColor: colors.electric,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  centerRetryText: { color: colors.white, fontWeight: '900', fontSize: 15 },
-  centerGhost: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  centerGhostText: { color: colors.textMuted, fontWeight: '800', fontSize: 14 },
   noOptionsMuted: {
     color: colors.textMuted,
     fontSize: 13,
@@ -310,14 +329,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   privacy: { color: colors.textSecondary, fontSize: 12, marginBottom: 18, textAlign: 'right' },
-  cta: {
-    backgroundColor: colors.electric,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  ctaDisabled: { opacity: 0.55 },
-  ctaText: { color: colors.white, fontWeight: '900', fontSize: 16 },
 });

@@ -16,11 +16,12 @@
       "bundleIdentifier": "com.theear.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "האוזן משתמשת במיקום כדי להציג שאלות רלוונטיות לאזור שבו אתה נמצא, ולאימות תשובות מהשטח.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "האוזן משתמשת במיקום כדי לעדכן שאלות חיות בסביבתך."
+        "NSLocationWhenInUseUsageDescription": "האוזן משתמשת במיקום שלך כדי להראות שאלות ועדכונים שנמצאים קרוב אליך, וכדי לוודא שתשובות מגיעות מאנשים שבאמת נמצאים באזור. המיקום המדויק שלך לא מוצג למשתמשים אחרים."
       }
     },
     "android": {
+      "package": "com.theear.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1426"
@@ -36,12 +37,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "האוזן צריכה גישה למיקום כדי להציג טיפות חיות באזור."
+          "locationWhenInUsePermission": "האוזן משתמשת במיקום שלך כדי להראות שאלות ועדכונים שנמצאים קרוב אליך, וכדי לוודא שתשובות מגיעות מאנשים שבאמת נמצאים באזור. המיקום המדויק שלך לא מוצג למשתמשים אחרים."
         }
       ]
     ],
-    "extra": {
-      "apiBaseUrl": "http://localhost:3000"
-    }
+    "extra": {}
   }
 }

@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootTabParamList, MyStackParamList } from '../navigation/RootNavigator';
 import { colors } from '../theme/colors';
+import { palette } from '../theme/theme';
+import { PressableScale } from '../components/ui/PressableScale';
+import { Button } from '../components/ui/Button';
 import type { Drop } from '../types/api';
 import { ensureAnonymousSession, fetchMyDrops } from '../lib/api';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
 import { categoryHe, categoryMarkerIcon } from '../lib/categories';
-import { formatRelativeTimeHe } from '../lib/relativeTime';
+import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
+import { useHiddenContent } from '../lib/hiddenContent';
 
 type Props = NativeStackScreenProps<MyStackParamList, 'MyQuestions'>;
 
@@ -40,9 +44,7 @@ function ErrorEmptyCard({ message, onRetry }: { message: string; onRetry: () => 
     <View style={styles.softErrorStandalone}>
       <Text style={styles.softErrorTitle}>לא הצלחנו לטעון את הרשימה</Text>
       <Text style={styles.softErrorSub}>{message}</Text>
-      <Pressable style={styles.softErrorBtnWide} onPress={onRetry}>
-        <Text style={styles.softErrorBtnText}>נסה שוב</Text>
-      </Pressable>
+      <Button label="נסה שוב" icon="refresh" onPress={onRetry} style={styles.cardCtaSpacing} />
     </View>
   );
 }
@@ -54,21 +56,44 @@ function FriendlyEmptyCard({ onAsk }: { onAsk: () => void }) {
       <Text style={styles.emptySub}>
         כשתפתח שאלה מהמפה, היא תופיע פה — יחד עם תשובות מהשטח בזמן אמת.
       </Text>
-      <Pressable style={styles.emptyCta} onPress={onAsk}>
-        <Text style={styles.emptyCtaText}>שאל מהמפה</Text>
-      </Pressable>
+      <Button label="שאל מהמפה" icon="map" onPress={onAsk} style={styles.cardCtaSpacing} />
     </View>
   );
 }
 
-function statusShortHe(drop: Drop): string {
-  if (drop.status === 'ACTIVE') return 'פעילה עכשיו';
+function statusShortHe(drop: Drop, nowMs: number): string {
   if (drop.status === 'EXPIRED') return 'נסגרה';
-  return drop.status === 'RESOLVED' ? 'טופלה' : drop.status;
+  if (drop.status === 'CLOSED') return 'נסגרה';
+  if (drop.status === 'RESOLVED') return 'טופלה';
+  if (drop.status === 'ACTIVE') {
+    if (drop.answerCount > 0) return `יש ${drop.answerCount} תשובות`;
+    const expiresMs = new Date(drop.expiresAt).getTime();
+    if (Number.isFinite(expiresMs) && expiresMs - nowMs <= 10 * 60_000 && expiresMs - nowMs > 0) {
+      return 'נסגרת בקרוב';
+    }
+    return 'ממתינה לתשובות';
+  }
+  return drop.status;
+}
+
+function statusColor(drop: Drop, nowMs: number): string {
+  if (drop.status === 'RESOLVED') return palette.primaryBright;
+  if (drop.status === 'EXPIRED') return palette.textMuted;
+  if (drop.status === 'CLOSED') return palette.textMuted;
+  if (drop.status === 'ACTIVE') {
+    if (drop.answerCount > 0) return palette.live;
+    const expiresMs = new Date(drop.expiresAt).getTime();
+    if (Number.isFinite(expiresMs) && expiresMs - nowMs <= 10 * 60_000 && expiresMs - nowMs > 0) {
+      return '#FDE047';
+    }
+    return palette.textMuted;
+  }
+  return palette.textMuted;
 }
 
 export function MyQuestionsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { hiddenDropIds } = useHiddenContent();
   const [drops, setDrops] = useState<Drop[]>([]);
   const [loadingFirst, setLoadingFirst] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,10 +142,12 @@ export function MyQuestionsScreen({ navigation }: Props) {
 
   const sorted = useMemo(
     () =>
-      [...drops].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [drops],
+      [...drops]
+        .filter((d) => !hiddenDropIds.has(d.id))
+        .sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+    [drops, hiddenDropIds],
   );
 
   const openDrop = useCallback(
@@ -137,7 +164,18 @@ export function MyQuestionsScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
-      <Text style={styles.screenTitle}>השאלות שלי</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.screenTitle}>השאלות שלי</Text>
+        <PressableScale
+          haptic="none"
+          hitSlop={10}
+          onPress={() => navigation.navigate('About')}
+          accessibilityRole="button"
+          accessibilityLabel="מידע, פרטיות ובטיחות"
+        >
+          <Text style={styles.aboutLink}>מידע, פרטיות ובטיחות</Text>
+        </PressableScale>
+      </View>
       <Text style={styles.screenSub}>
         שאלות שפתחת — ותשובות שקיבלת מהשטח בזמן אמת.
       </Text>
@@ -148,9 +186,15 @@ export function MyQuestionsScreen({ navigation }: Props) {
           <Text style={styles.softErrorSub}>
             {errorMsg ?? 'נסה שוב בעוד רגע.'}
           </Text>
-          <Pressable style={styles.softErrorBtn} onPress={() => load(false)}>
-            <Text style={styles.softErrorBtnText}>נסה שוב</Text>
-          </Pressable>
+          <Button
+            label="נסה שוב"
+            icon="refresh"
+            variant="ghost"
+            size="md"
+            fullWidth={false}
+            onPress={() => load(false)}
+            style={styles.cardCtaSpacing}
+          />
         </View>
       ) : null}
 
@@ -177,21 +221,37 @@ export function MyQuestionsScreen({ navigation }: Props) {
             <FriendlyEmptyCard onAsk={askOnMapTab} />
           )
         }
-        renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => openDrop(item)}>
-            <View style={styles.cardTop}>
-              <Text style={styles.cardIcon}>{categoryMarkerIcon[item.category]}</Text>
-              <Text style={styles.cat}>{categoryHe(item.category)}</Text>
-            </View>
-            <Text style={styles.q} numberOfLines={2}>
-              {item.question}
-            </Text>
-            <Text style={styles.meta}>
-              {formatRelativeTimeHe(item.createdAt, nowMs)} · {item.answerCount} תשובות ·{' '}
-              {statusShortHe(item)}
-            </Text>
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          const sColor = statusColor(item, nowMs);
+          const sLabel = statusShortHe(item, nowMs);
+          const fresh = freshnessLabelHe(item.createdAt, nowMs);
+          return (
+            <PressableScale
+              style={styles.card}
+              onPress={() => openDrop(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.question} — ${sLabel}`}
+            >
+              <View style={styles.cardTop}>
+                <Text style={styles.cardIcon}>{categoryMarkerIcon[item.category]}</Text>
+                <Text style={styles.cat}>{categoryHe(item.category)}</Text>
+                <View style={[styles.statusPill, { borderColor: sColor }]}>
+                  <View style={[styles.statusDot, { backgroundColor: sColor }]} />
+                  <Text style={[styles.statusText, { color: sColor }]}>{sLabel}</Text>
+                </View>
+              </View>
+              <Text style={styles.q} numberOfLines={2}>
+                {item.question}
+              </Text>
+              <View style={styles.cardFooter}>
+                <Ionicons name="chevron-back" size={16} color={palette.textMuted} />
+                <Text style={styles.meta}>
+                  {fresh.label} · {formatRelativeTimeHe(item.createdAt, nowMs)}
+                </Text>
+              </View>
+            </PressableScale>
+          );
+        }}
       />
     </View>
   );
@@ -204,11 +264,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
+  headerRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   screenTitle: {
     color: colors.white,
     fontWeight: '900',
     fontSize: 22,
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  aboutLink: {
+    color: colors.electricBright,
+    fontWeight: '800',
+    fontSize: 13,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     writingDirection: 'rtl',
   },
   screenSub: {
@@ -286,27 +359,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '600',
   },
-  softErrorBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  softErrorBtnWide: {
-    alignSelf: 'stretch',
-    backgroundColor: colors.electric,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  softErrorBtnText: { color: colors.white, fontWeight: '800', fontSize: 15 },
+  cardCtaSpacing: { marginTop: 8, alignSelf: 'flex-start' },
   emptyWrap: {
     justifyContent: 'center',
     paddingVertical: 20,
@@ -335,31 +388,20 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontWeight: '600',
   },
-  emptyCta: {
-    marginTop: 18,
-    alignSelf: 'stretch',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: colors.electric,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-  },
-  emptyCtaText: { color: colors.white, fontWeight: '900', fontSize: 16 },
   card: {
     alignSelf: 'stretch',
-    backgroundColor: colors.bubble,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
+    backgroundColor: colors.navyMuted,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: palette.hairlineStrong,
     marginBottom: 10,
   },
   cardTop: {
     flexDirection: 'row-reverse',
     gap: 6,
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   cardIcon: { fontSize: 15 },
   cat: {
@@ -369,6 +411,23 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     writingDirection: 'rtl',
+  },
+  statusPill: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 11, fontWeight: '800' },
+  cardFooter: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
   },
   q: {
     color: colors.white,
