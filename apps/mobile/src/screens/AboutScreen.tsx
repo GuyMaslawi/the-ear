@@ -1,12 +1,19 @@
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme/colors';
 import { SUPPORT_EMAIL } from '../lib/support';
-
-// TODO: Replace placeholder legal copy with lawyer-reviewed public Privacy Policy and Terms URLs before public launch.
+import { PRIVACY_POLICY_URL, TERMS_URL } from '../lib/legal';
 
 export function AboutScreen() {
   const mailto = () => {
     void Linking.openURL(`mailto:${SUPPORT_EMAIL}`);
+  };
+
+  const openPrivacy = () => {
+    void Linking.openURL(PRIVACY_POLICY_URL);
+  };
+
+  const openTerms = () => {
+    void Linking.openURL(TERMS_URL);
   };
 
   return (
@@ -69,12 +76,18 @@ export function AboutScreen() {
         .
       </Text>
 
-      <View style={styles.note}>
-        <Text style={styles.noteText}>
-          זהו טקסט זמני. גרסת מדיניות פרטיות ותנאי שימוש משפטיים פומביים יפורסמו
-          לפני שחרור פומבי בחנות.
+      <Text style={styles.h2}>מדיניות פרטיות ותנאי שימוש</Text>
+      <Text style={styles.body}>
+        הגרסה הפומבית של מדיניות הפרטיות זמינה בכתובת{' '}
+        <Text style={styles.link} onPress={openPrivacy}>
+          {PRIVACY_POLICY_URL}
         </Text>
-      </View>
+        , ותנאי השימוש בכתובת{' '}
+        <Text style={styles.link} onPress={openTerms}>
+          {TERMS_URL}
+        </Text>
+        .
+      </Text>
     </ScrollView>
   );
 }
@@ -109,21 +122,5 @@ const styles = StyleSheet.create({
   link: {
     color: colors.electricBright,
     fontWeight: '800',
-  },
-  note: {
-    marginTop: 28,
-    backgroundColor: colors.navyMuted,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 12,
-  },
-  noteText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-    fontWeight: '700',
   },
 });

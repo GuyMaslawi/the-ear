@@ -9,10 +9,11 @@ disclosures that still need to be filled in by a human reviewer.
 Support / privacy contact (placeholder — see `apps/mobile/src/lib/support.ts`):
 `support@theear.app`
 
+Public legal URLs (production domain, see `apps/mobile/src/lib/legal.ts`):
+- Privacy Policy: https://theear.app/privacy.html
+- Terms / Community Guidelines: https://theear.app/terms.html
+
 > TODO: create real support/privacy inbox before store submission.
-> TODO: publish a hosted Privacy Policy URL and Terms / Community Guidelines
-> URL before public launch (App Store and Play Store both require a public
-> Privacy Policy URL, even for closed testing tracks in many cases).
 
 ---
 
@@ -85,8 +86,8 @@ Apple requires every app with user-generated content to support:
 
 - **Support URL**: TODO — needs a public-facing support page (or a `mailto:`
   redirect page) before submission.
-- **Privacy Policy URL**: TODO — required for any app collecting data; must
-  be a public, working HTTPS URL.
+- **Privacy Policy URL**: https://theear.app/privacy.html (served from the
+  public legal site in `docs/`).
 - **Age rating recommendation**: 12+ (user-generated content, unrestricted
   web access to location-tagged content, infrequent/mild references possible
   via UGC). Not directed at children.
@@ -134,9 +135,8 @@ Apple requires every app with user-generated content to support:
 
 ### Other Play metadata
 
-- **Privacy Policy URL**: TODO — required by Play Console for any app that
-  requests location or collects UGC. Internal testing track still requires
-  the field to be filled in.
+- **Privacy Policy URL**: https://theear.app/privacy.html (served from the
+  public legal site in `docs/`).
 - **App access instructions**: "No sign-in required. Launch the app and
   allow location permission ('While using the app'). Map will populate with
   nearby questions; tap any pin to view, answer, or report content."
@@ -166,9 +166,9 @@ Apple requires every app with user-generated content to support:
 - [x] Close-own-question flow.
 - [x] All network traffic over HTTPS (enforced for shippable builds via
       `apps/mobile/app.config.js`).
-- [ ] Public Privacy Policy URL — **blocker for both stores**.
-- [ ] Public Terms / Community Guidelines URL — **recommended before public
-      launch**, currently in-app only.
+- [x] Public Privacy Policy URL — https://theear.app/privacy.html.
+- [x] Public Terms / Community Guidelines URL —
+      https://theear.app/terms.html (linked from the About screen).
 - [ ] Real `support@theear.app` inbox — **blocker for both stores** (users
       must be able to reach a human).
 - [ ] Lawyer-reviewed copy for the in-app About screen — TODO before public
