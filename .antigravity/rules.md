@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # The Ear / האוזן — Project Rules
 
 ## Product identity
@@ -62,3 +58,52 @@ alwaysApply: true
 - For backend changes, consider Jest/e2e impact.
 - For mobile changes, verify runtime behavior in Expo.
 - Always include manual test steps.
+
+## Premium UX / Product Experience Rules
+
+- Treat every task as both a product task and an engineering task.
+- Before changing UI, think like a senior mobile product designer:
+  - What is the user trying to do?
+  - What is the fastest path to success?
+  - What is confusing, hidden, slow, or visually noisy?
+  - What should be the single primary action on this screen?
+- Do not only make the UI prettier. Improve clarity, speed, confidence, and usability.
+- Every screen must be understandable within 3 seconds by a first-time user.
+- Every screen should have one clear primary action.
+- Prefer fewer choices, clearer labels, and stronger hierarchy.
+- Avoid UI clutter, duplicate CTAs, vague icons, and hidden actions.
+- Make touch targets comfortable for mobile usage.
+- Important actions must give immediate feedback: pressed, loading, success, error.
+- Empty states should guide the user toward the next useful action.
+- Error states should explain what happened and how to recover.
+- Loading states should feel intentional, not broken.
+- Map interactions must be predictable:
+  - show current location clearly
+  - allow selecting any point on the map
+  - make selected location obvious
+  - make nearby drops/questions easy to discover
+- The main flow must always stay simple:
+  1. Open app
+  2. See my area
+  3. Select a place or use my location
+  4. Ask a question/drop
+  5. See nearby questions
+  6. Open a question
+  7. Answer or follow activity
+- Suggested answers/questions should feel contextual, natural, and relevant to the selected location/question.
+- Do not introduce large redesigns unless the current flow is fundamentally broken.
+- When improving UX, prefer small high-impact changes over visual decoration.
+
+## UX execution behavior
+
+For every UX/UI-related task:
+1. First describe the broken or weak user flow in 3-6 bullets.
+2. Then define the ideal flow.
+3. Then implement the smallest code changes that make the flow better.
+4. After coding, check:
+   - Are all buttons functional?
+   - Is the primary CTA obvious?
+   - Are loading/empty/error states covered?
+   - Is the mobile layout clean with no overlap?
+   - Can a first-time user understand the screen without explanation?
+5. Finish with manual test steps from the user's perspective.

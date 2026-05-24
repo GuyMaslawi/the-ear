@@ -6,6 +6,8 @@
     "dev:backend": "npm run start:dev --prefix apps/backend",
     "dev:mobile": "npm run start --prefix apps/mobile",
     "dev:all": "concurrently -n backend,mobile -c blue,magenta \"npm run dev:backend\" \"npm run dev:mobile\"",
+    "ios": "npm run ios --prefix apps/mobile",
+    "android": "npm run android --prefix apps/mobile",
     "open:ios": "open apps/mobile/ios/app.xcworkspace",
     "docker:up": "docker compose -f infra/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker-compose.yml down"
