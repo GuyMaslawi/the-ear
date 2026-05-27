@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   Dimensions,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -109,15 +110,7 @@ function LivePulse() {
   return <Animated.View style={[styles.liveDot, { opacity }]} />;
 }
 
-function DropCard({
-  drop,
-  userLat,
-  userLng,
-  nowMs,
-  onAnswer,
-  answeredStatus,
-  cardHeight,
-}: {
+type DropCardProps = {
   drop: Drop;
   userLat: number;
   userLng: number;
@@ -125,7 +118,17 @@ function DropCard({
   onAnswer: (dropId: string, status: QuickStatus) => void | Promise<void>;
   answeredStatus: QuickStatus | null;
   cardHeight: number;
-}) {
+};
+
+const DropCard = memo(function DropCard({
+  drop,
+  userLat,
+  userLng,
+  nowMs,
+  onAnswer,
+  answeredStatus,
+  cardHeight,
+}: DropCardProps) {
   const [lng, lat] = drop.location.coordinates;
   const dist = Math.round(distanceMeters(userLat, userLng, lat, lng));
   const feedbackScale = useRef(new Animated.Value(0)).current;
@@ -242,7 +245,7 @@ function DropCard({
       </View>
     </View>
   );
-}
+});
 
 export function LiveFeedScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -661,9 +664,6 @@ export function LiveFeedScreen({ navigation }: Props) {
               style={styles.standCtaSpacing}
             />
           </View>
-          <Pressable hitSlop={10} onPress={refreshCoords}>
-            <Text style={styles.geoGhost}>עדיין משתמשים במיקום אחר?</Text>
-          </Pressable>
         </View>
       ) : centerMissingLocation ? (
         <View style={[styles.centerCardWrap, { paddingTop: insets.top + 64 }]}>
@@ -680,6 +680,16 @@ export function LiveFeedScreen({ navigation }: Props) {
               onPress={refreshCoords}
               style={styles.standCtaSpacing}
             />
+            {permissionDenied ? (
+              <Pressable
+                hitSlop={10}
+                onPress={() => void Linking.openSettings()}
+                accessibilityRole="button"
+                accessibilityLabel="פתח הגדרות"
+              >
+                <Text style={styles.geoGhost}>פתח הגדרות</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       ) : centerEmptyOk ? (
@@ -812,7 +822,9 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 19,
     flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
     justifyContent: 'center',
+    rowGap: 4,
     gap: 4,
   },
   progressDot: {
@@ -864,7 +876,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
   },
   softErrorStripeRetryText: {
     color: colors.white,

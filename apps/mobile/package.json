@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:cov": "jest --coverage"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -35,8 +37,15 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "jest-environment-node": "30.4.1",
+    "jest-mock": "30.4.1"
+  }
 }

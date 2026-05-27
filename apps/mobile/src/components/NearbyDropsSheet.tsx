@@ -1,11 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { memo, useCallback } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   FlatList,
+  type ListRenderItemInfo,
   RefreshControl,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -14,10 +12,64 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { PressableScale } from './ui/PressableScale';
 import { Button } from './ui/Button';
+import { LivePulse } from './LivePulse';
 import { tapLight } from '../lib/haptics';
 import type { Drop } from '../types/api';
 import { categoryHe, categoryMarkerIcon } from '../lib/categories';
 import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
+import { askCtaLabelHe } from '../lib/nearbyCtaCopy';
+import { styles } from './NearbyDropsSheet.styles';
+
+type RowProps = {
+  item: Drop;
+  nowMs: number;
+  onSelect: (d: Drop) => void;
+};
+
+const NearbyDropRow = memo(function NearbyDropRow({ item, nowMs, onSelect }: RowProps) {
+  const verified = item.answerCount >= 1;
+  const fresh = freshnessLabelHe(item.createdAt, nowMs);
+  const freshStyle =
+    fresh.level === 'live'
+      ? styles.freshLive
+      : fresh.level === 'fresh'
+        ? styles.freshFresh
+        : fresh.level === 'stale'
+          ? styles.freshStale
+          : styles.freshOutdated;
+  return (
+    <PressableScale
+      style={styles.row}
+      scaleTo={0.98}
+      onPress={() => onSelect(item)}
+      accessibilityRole="button"
+      accessibilityLabel={item.question}
+    >
+      <View style={styles.bubble}>
+        <View style={styles.bubbleHeader}>
+          <Text style={styles.catIcon}>{categoryMarkerIcon[item.category]}</Text>
+          <Text style={styles.cat}>{categoryHe(item.category)}</Text>
+          {verified ? (
+            <View style={styles.verifiedPill}>
+              <Text style={styles.verifiedPillText}>✓ מהשטח</Text>
+            </View>
+          ) : null}
+          {verified ? <LivePulse /> : null}
+        </View>
+        <Text style={styles.q} numberOfLines={2}>
+          {item.question}
+        </Text>
+        <Text style={styles.meta}>
+          {verified
+            ? `מהשטח · ${item.answerCount} משיבים · עודכן ${formatRelativeTimeHe(item.createdAt, nowMs)}`
+            : `ממתין לעדכון מהשטח · נפתח ${formatRelativeTimeHe(item.createdAt, nowMs)}`}
+          {'  '}
+          <Text style={freshStyle}>· {fresh.label}</Text>
+        </Text>
+      </View>
+    </PressableScale>
+  );
+});
 
 type Props = {
   drops: Drop[];
@@ -32,36 +84,11 @@ type Props = {
   emptyHint?: string;
   /** Short line explaining map vs pin behavior (map screen). */
   areaHint?: string;
+  /** True when the user has picked a pin on the map (drives Ask CTA copy). */
+  hasSelectedPoint?: boolean;
+  /** Optional callback to clear the pin from inside the sheet header. */
+  onClearSelectedPoint?: () => void;
 };
-
-function LivePulse() {
-  const o = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(o, {
-          toValue: 0.25,
-          duration: 650,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(o, {
-          toValue: 1,
-          duration: 650,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [o]);
-  return (
-    <Animated.View style={[styles.pulseOuter, { opacity: o }]}>
-      <View style={styles.pulse} />
-    </Animated.View>
-  );
-}
 
 export function NearbyDropsSheet({
   drops,
@@ -74,10 +101,19 @@ export function NearbyDropsSheet({
   nowMs,
   emptyHint,
   areaHint,
+  hasSelectedPoint = false,
+  onClearSelectedPoint,
 }: Props) {
   const insets = useSafeAreaInsets();
 
   const listRefreshing = !!(refreshing || loading);
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Drop>) => (
+      <NearbyDropRow item={item} nowMs={nowMs} onSelect={onSelect} />
+    ),
+    [nowMs, onSelect],
+  );
 
   return (
     <View
@@ -109,15 +145,35 @@ export function NearbyDropsSheet({
           עדכונים בזמן אמת מאנשים שנמצאים באזור
         </Text>
 
+        {hasSelectedPoint ? (
+          <PressableScale
+            haptic="none"
+            onPress={() => {
+              tapLight();
+              onClearSelectedPoint?.();
+            }}
+            disabled={!onClearSelectedPoint}
+            accessibilityRole="button"
+            accessibilityLabel="הסר את הנקודה שנבחרה במפה"
+            style={styles.selectedPill}
+          >
+            <Ionicons name="location" size={13} color={colors.electricBright} />
+            <Text style={styles.selectedPillText}>נקודה נבחרה במפה</Text>
+            <Ionicons name="close" size={13} color={colors.textMuted} />
+          </PressableScale>
+        ) : null}
+
         {areaHint ? <Text style={styles.areaHint}>{areaHint}</Text> : null}
 
         <View style={styles.ctaRow}>
           <Button
-            label="מה קורה עכשיו"
-            icon="pulse"
-            variant="success"
+            label={askCtaLabelHe(hasSelectedPoint)}
+            icon="add-circle"
+            variant="primary"
             size="md"
-            onPress={onLiveFeed}
+            onPress={() => {
+              onAsk();
+            }}
             style={styles.ctaPrimary}
           />
           <PressableScale
@@ -125,13 +181,13 @@ export function NearbyDropsSheet({
             style={styles.ctaSecondary}
             onPress={() => {
               tapLight();
-              onAsk();
+              onLiveFeed();
             }}
             accessibilityRole="button"
-            accessibilityLabel="שאל כאן"
+            accessibilityLabel="מה קורה עכשיו"
           >
-            <Ionicons name="add-circle-outline" size={15} color={colors.electricBright} />
-            <Text style={styles.ctaSecondaryText}>שאל כאן</Text>
+            <Ionicons name="pulse" size={15} color={colors.electricBright} />
+            <Text style={styles.ctaSecondaryText}>מה קורה עכשיו</Text>
           </PressableScale>
         </View>
       </View>
@@ -157,246 +213,9 @@ export function NearbyDropsSheet({
                 'עדיין אין עדכונים מהשטח כאן · עוקבים בזמן אמת ונעדכן ברגע שמשהו קורה.'}
             </Text>
           }
-          renderItem={({ item }) => {
-            const verified = item.answerCount >= 1;
-            const fresh = freshnessLabelHe(item.createdAt, nowMs);
-            const freshStyle =
-              fresh.level === 'live'
-                ? styles.freshLive
-                : fresh.level === 'fresh'
-                  ? styles.freshFresh
-                  : fresh.level === 'stale'
-                    ? styles.freshStale
-                    : styles.freshOutdated;
-            return (
-              <PressableScale
-                style={styles.row}
-                scaleTo={0.98}
-                onPress={() => onSelect(item)}
-                accessibilityRole="button"
-                accessibilityLabel={item.question}
-              >
-                <View style={styles.bubble}>
-                  <View style={styles.bubbleHeader}>
-                    <Text style={styles.catIcon}>{categoryMarkerIcon[item.category]}</Text>
-                    <Text style={styles.cat}>{categoryHe(item.category)}</Text>
-                    {verified ? (
-                      <View style={styles.verifiedPill}>
-                        <Text style={styles.verifiedPillText}>✓ מהשטח</Text>
-                      </View>
-                    ) : null}
-                    {verified ? <LivePulse /> : null}
-                  </View>
-                  <Text style={styles.q} numberOfLines={2}>
-                    {item.question}
-                  </Text>
-                  <Text style={styles.meta}>
-                    {verified
-                      ? `מהשטח · ${item.answerCount} משיבים · עודכן ${formatRelativeTimeHe(item.createdAt, nowMs)}`
-                      : `ממתין לעדכון מהשטח · נפתח ${formatRelativeTimeHe(item.createdAt, nowMs)}`}
-                    {'  '}
-                    <Text style={freshStyle}>· {fresh.label}</Text>
-                  </Text>
-                </View>
-              </PressableScale>
-            );
-          }}
+          renderItem={renderItem}
         />
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '55%',
-    backgroundColor: colors.navy,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 16,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  headerBlock: {
-    alignItems: 'flex-end',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 8,
-  },
-  titleRow: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    alignSelf: 'stretch',
-  },
-  title: {
-    color: colors.white,
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-    flexShrink: 1,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginTop: 6,
-    textAlign: 'right',
-    alignSelf: 'stretch',
-    lineHeight: 18,
-    writingDirection: 'rtl',
-    fontWeight: '600',
-  },
-  areaHint: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: 8,
-    textAlign: 'right',
-    alignSelf: 'stretch',
-    lineHeight: 16,
-    writingDirection: 'rtl',
-    fontWeight: '600',
-  },
-  ctaRow: {
-    flexDirection: 'row-reverse',
-    alignSelf: 'stretch',
-    gap: 10,
-    marginTop: 12,
-  },
-  ctaPrimary: {
-    flex: 1,
-  },
-  ctaSecondary: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-    backgroundColor: colors.bubble,
-  },
-  ctaSecondaryText: {
-    color: colors.electricBright,
-    fontWeight: '800',
-    fontSize: 12,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  refreshGhost: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 11,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(147, 197, 253, 0.35)',
-    backgroundColor: 'rgba(37, 99, 235, 0.1)',
-  },
-  refreshGhostText: { color: colors.electricBright, fontWeight: '700', fontSize: 11 },
-  list: { flexGrow: 0 },
-  emptyContainer: { flexGrow: 1, justifyContent: 'center' },
-  empty: {
-    color: colors.textMuted,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-    paddingVertical: 20,
-    paddingHorizontal: 12,
-    lineHeight: 20,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  row: { marginBottom: 10 },
-  bubble: {
-    backgroundColor: colors.bubble,
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-  },
-  bubbleHeader: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 6,
-  },
-  catIcon: { fontSize: 14 },
-  cat: {
-    flex: 1,
-    color: colors.electricBright,
-    fontWeight: '800',
-    fontSize: 12,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  verifiedPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(74, 222, 128, 0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.35)',
-  },
-  verifiedPillText: {
-    color: '#86EFAC',
-    fontSize: 10,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-  },
-  pulseOuter: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: 'rgba(74, 222, 128, 0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pulse: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#4ADE80',
-  },
-  q: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-    flexShrink: 1,
-  },
-  meta: {
-    color: colors.textMuted,
-    marginTop: 6,
-    fontSize: 12,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-    fontWeight: '600',
-  },
-  freshLive: { color: '#86EFAC', fontWeight: '800' },
-  freshFresh: { color: '#BBF7D0', fontWeight: '800' },
-  freshStale: { color: '#FDE047', fontWeight: '800' },
-  freshOutdated: { color: colors.textMuted, fontWeight: '800' },
-});

@@ -45,3 +45,12 @@ export const suggestedQuestionsHe: Record<DropCategory, string[]> = {
     'מה כדעתכם מהשטח?',
   ],
 };
+
+/** Shown before the user types anything — a friendly mixed starter set. */
+export const starterSuggestionsHe: string[] = [
+  'מה קורה שם עכשיו?',
+  'יש תור?',
+  'יש חניה באזור?',
+  'כמה עמוס שם?',
+  'הכול רגוע?',
+];

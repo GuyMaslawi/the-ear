@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
+  Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -21,7 +22,6 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableScale } from '../components/ui/PressableScale';
-import { palette } from '../theme/theme';
 import { tapLight } from '../lib/haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRoute, type RouteProp } from '@react-navigation/native';
@@ -48,8 +48,13 @@ import { categoryHe } from '../lib/categories';
 import { formatRelativeTimeHe } from '../lib/relativeTime';
 import type { Drop } from '../types/api';
 import { DEV_FALLBACK_REGION, VISIBILITY_RADIUS_METERS } from '../lib/devLocation';
+import { resolveAskTarget } from '../lib/mapSelection';
+import { nearbyEmptyMessageHe } from '../lib/nearbyCtaCopy';
 import { useHiddenContent } from '../lib/hiddenContent';
 import { darkMapStyle } from '../lib/mapStyle';
+import { styles } from './MapScreen.styles';
+import { DropsListFallback } from './DropsListFallback';
+
 const SHEET_MAX_RATIO = 0.55;
 /** Space below safe area + topBar (dual-line brand) before overlay banners */
 const MAP_ERROR_BANNER_TOP_OFFSET = 68;
@@ -58,48 +63,6 @@ const REGION_LOAD_DEBOUNCE_MS = 420;
 type MapRouteParams = MapStackParamList['Map'];
 
 type Props = NativeStackScreenProps<MapStackParamList, 'Map'>;
-
-function DropsListFallback({
-  drops,
-  onSelect,
-  nowMs,
-  emptyMessage,
-}: {
-  drops: Drop[];
-  onSelect: (d: Drop) => void;
-  nowMs: number;
-  emptyMessage: string;
-}) {
-  return (
-    <ScrollView
-      style={styles.listScroll}
-      contentContainerStyle={styles.listContent}
-      keyboardShouldPersistTaps="handled"
-    >
-      {drops.length === 0 ? (
-        <Text style={styles.listEmpty}>
-          {emptyMessage}
-        </Text>
-      ) : (
-        drops.map((d) => (
-          <Pressable
-            key={d.id}
-            style={styles.listRow}
-            onPress={() => onSelect(d)}
-          >
-            <Text style={styles.listQ} numberOfLines={2}>
-              {d.question}
-            </Text>
-            <Text style={styles.listMeta}>
-              {formatRelativeTimeHe(d.createdAt, nowMs)} · {d.answerCount} תשובות · רדיוס{' '}
-              {d.radiusMeters}מ׳ · {categoryHe(d.category)}
-            </Text>
-          </Pressable>
-        ))
-      )}
-    </ScrollView>
-  );
-}
 
 export function MapScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -127,10 +90,12 @@ export function MapScreen({ navigation }: Props) {
   const [nearbyUserMessage, setNearbyUserMessage] = useState<string | null>(null);
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [celebrationDrop, setCelebrationDrop] = useState<Drop | null>(null);
+  const [recenterBusy, setRecenterBusy] = useState(false);
   const lastHttpLoc = useRef(0);
   const apiDropsRef = useRef<Drop[]>([]);
   const regionRef = useRef(region);
   const regionLoadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastGpsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   regionRef.current = region;
 
@@ -260,17 +225,21 @@ export function MapScreen({ navigation }: Props) {
     (lat: number, lng: number) => {
       setPreviewDrop(null);
       setSelectedPoint({ lat, lng });
+      tapLight();
+      mapRef.current?.animateCamera(
+        { center: { latitude: lat, longitude: lng } },
+        { duration: 350 },
+      );
       void loadDrops(lat, lng);
     },
     [loadDrops],
   );
 
   const onMapPress = useCallback(
-    (e: MapPressEvent) => {
-      const { latitude, longitude } = e.nativeEvent.coordinate;
-      applyMapSelection(latitude, longitude);
+    (_e: MapPressEvent) => {
+      if (previewDrop) setPreviewDrop(null);
     },
-    [applyMapSelection],
+    [previewDrop],
   );
 
   const onMapLongPress = useCallback(
@@ -280,6 +249,54 @@ export function MapScreen({ navigation }: Props) {
     },
     [applyMapSelection],
   );
+
+  const clearSelectedPoint = useCallback(() => {
+    setSelectedPoint(null);
+    tapLight();
+    const gps = lastGpsRef.current;
+    const target = gps ?? { lat: regionRef.current.latitude, lng: regionRef.current.longitude };
+    mapRef.current?.animateCamera(
+      { center: { latitude: target.lat, longitude: target.lng } },
+      { duration: 350 },
+    );
+    void loadDrops(target.lat, target.lng);
+  }, [loadDrops]);
+
+  const recenterToGps = useCallback(async () => {
+    if (recenterBusy) return;
+    tapLight();
+    setRecenterBusy(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationPermissionDenied(true);
+        setToast(LOCATION_PERMISSION_MESSAGE_HE);
+        return;
+      }
+      setLocationPermissionDenied(false);
+      const pos = await Location.getCurrentPositionAsync({});
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      lastGpsRef.current = { lat, lng };
+      setSelectedPoint(null);
+      mapRef.current?.animateCamera(
+        { center: { latitude: lat, longitude: lng } },
+        { duration: 450 },
+      );
+      void loadDrops(lat, lng);
+    } catch {
+      setToast('לא הצלחנו לקרוא מיקום מהמכשיר — נסה שוב בעוד רגע.');
+    } finally {
+      setRecenterBusy(false);
+    }
+  }, [loadDrops, recenterBusy]);
+
+  const openLocationSettings = useCallback(() => {
+    tapLight();
+    void Linking.openSettings().catch(() => {
+      setToast('לא הצלחנו לפתוח את הגדרות המכשיר. פתח אותן ידנית ותן הרשאת מיקום.');
+    });
+  }, []);
 
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
@@ -330,6 +347,7 @@ export function MapScreen({ navigation }: Props) {
           lat = first.coords.latitude;
           lng = first.coords.longitude;
           gotGps = true;
+          lastGpsRef.current = { lat, lng };
         } catch {
           if (!cancelled) {
             setToast('לא הצלחנו לקרוא מיקום מהמכשיר — מציגים נתונים לאזור ברירת מחדל.');
@@ -353,6 +371,7 @@ export function MapScreen({ navigation }: Props) {
           (loc) => {
             const la = loc.coords.latitude;
             const ln = loc.coords.longitude;
+            lastGpsRef.current = { lat: la, lng: ln };
             getSocket()?.emit('geo:update', { lat: la, lng: ln });
             void patchUserLocationThrottled(la, ln);
           },
@@ -385,10 +404,7 @@ export function MapScreen({ navigation }: Props) {
   }
 
   const openAsk = useCallback(() => {
-    const pin = selectedPoint;
-    const r = regionRef.current;
-    const lat = pin?.lat ?? r.latitude;
-    const lng = pin?.lng ?? r.longitude;
+    const { lat, lng } = resolveAskTarget(selectedPoint, regionRef.current);
     navigation.navigate('CreateDrop', { lat, lng });
   }, [navigation, selectedPoint]);
 
@@ -398,19 +414,21 @@ export function MapScreen({ navigation }: Props) {
     });
   };
 
-  const openDetails = (d: Drop) => {
-    setPreviewDrop(null);
-    navigation.navigate('DropDetails', { dropId: d.id, cachedDrop: d });
-  };
+  const openDetails = useCallback(
+    (d: Drop) => {
+      setPreviewDrop(null);
+      navigation.navigate('DropDetails', { dropId: d.id, cachedDrop: d });
+    },
+    [navigation],
+  );
 
   const sheetBottomPx = Math.round(winH * SHEET_MAX_RATIO);
 
-  const listEmptyMessage =
-    nearbyPhase === 'error'
-      ? nearbyUserMessage ?? 'לא הצלחנו לטעון את הרשימה — נסה לרענן.'
-      : locationPermissionDenied
-        ? `${NO_NEARBY_QUESTIONS_MESSAGE_HE}\n${LOCATION_PERMISSION_MESSAGE_HE}`
-        : NO_NEARBY_QUESTIONS_MESSAGE_HE;
+  const listEmptyMessage = nearbyEmptyMessageHe({
+    phase: nearbyPhase,
+    apiUserMessage: nearbyUserMessage,
+    locationPermissionDenied,
+  });
 
   const listFallback = (
     <View style={styles.listWrap}>
@@ -563,12 +581,15 @@ export function MapScreen({ navigation }: Props) {
       ) : null}
 
       {showLocationBanner ? (
-        <View
+        <Pressable
           style={[styles.infoBanner, { top: insets.top + MAP_ERROR_BANNER_TOP_OFFSET }]}
-          pointerEvents="none"
+          accessibilityRole="button"
+          accessibilityLabel="פתח הגדרות מיקום"
+          onPress={openLocationSettings}
         >
           <Text style={styles.infoBannerText}>{LOCATION_PERMISSION_MESSAGE_HE}</Text>
-        </View>
+          <Text style={styles.infoBannerCta}>פתח הגדרות ›</Text>
+        </Pressable>
       ) : null}
 
       {previewDrop && !listOnly ? (
@@ -601,15 +622,41 @@ export function MapScreen({ navigation }: Props) {
         </View>
       ) : null}
 
+      {!listOnly && !previewDrop ? (
+        <View
+          pointerEvents="box-none"
+          style={[styles.fabColumn, { bottom: sheetBottomPx + 12 }]}
+        >
+          <PressableScale
+            haptic="none"
+            onPress={recenterToGps}
+            disabled={recenterBusy}
+            accessibilityRole="button"
+            accessibilityLabel={recenterBusy ? 'מאתר מיקום…' : 'חזור למיקום שלי'}
+            accessibilityState={{ disabled: recenterBusy, busy: recenterBusy }}
+            style={[styles.fab, recenterBusy && styles.fabBusy]}
+          >
+            <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
+            {recenterBusy ? (
+              <ActivityIndicator size="small" color={colors.electricBright} />
+            ) : (
+              <Ionicons name="locate" size={20} color={colors.electricBright} />
+            )}
+          </PressableScale>
+        </View>
+      ) : null}
+
       <NearbyDropsSheet
         drops={drops}
         loading={loadingDrops}
         refreshing={loadingDrops && drops.length > 0}
         nowMs={clock}
+        hasSelectedPoint={!!selectedPoint}
+        onClearSelectedPoint={clearSelectedPoint}
         areaHint={
           selectedPoint
-            ? '״שאל כאן״ ישתמש בנקודה המסומנת · הרשימה מתעדכנת לפי מרכז המפה כשמזיזים'
-            : 'גרור לעדכון השאלות לפי האזור המוצג · הקש או לחיצה ארוכה לבחירת נקודה'
+            ? 'השאלה תפורסם בנקודה שבחרת במפה · לחץ על הסיכה לביטול'
+            : 'לחיצה ארוכה על המפה תבחר נקודה לשאלה · הרשימה מתעדכנת לפי מרכז המפה'
         }
         emptyHint={
           nearbyPhase === 'error' && nearbyUserMessage
@@ -640,267 +687,3 @@ export function MapScreen({ navigation }: Props) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.navy },
-
-  toast: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 50,
-    backgroundColor: 'rgba(37, 99, 235, 0.95)',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
-  },
-  toastText: {
-    color: colors.white,
-    fontWeight: '800',
-    textAlign: 'center',
-    fontSize: 14,
-  },
-
-  errorBanner: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    zIndex: 20,
-    ...(Platform.OS === 'android' ? { elevation: 18 as const } : {}),
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
-  },
-  errorBannerText: {
-    color: '#FCA5A5',
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 13,
-    writingDirection: 'rtl',
-  },
-
-  softRefreshBanner: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    zIndex: 20,
-    ...(Platform.OS === 'android' ? { elevation: 18 as const } : {}),
-    backgroundColor: 'rgba(234, 179, 8, 0.12)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.35)',
-  },
-  softRefreshBannerText: {
-    color: '#FDE68A',
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 12,
-    writingDirection: 'rtl',
-  },
-
-  infoBanner: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    zIndex: 20,
-    ...(Platform.OS === 'android' ? { elevation: 18 as const } : {}),
-    backgroundColor: 'rgba(37, 99, 235, 0.2)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(147, 197, 253, 0.35)',
-  },
-  infoBannerText: {
-    color: '#BFDBFE',
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 12,
-    writingDirection: 'rtl',
-  },
-
-  listWrap: { ...StyleSheet.absoluteFillObject, paddingTop: 100 },
-  listScroll: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 200 },
-  listEmpty: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 24,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  listRow: {
-    backgroundColor: colors.bubble,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-  },
-  listQ: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 15,
-    textAlign: 'right',
-  },
-  listMeta: {
-    color: colors.textSecondary,
-    marginTop: 6,
-    fontSize: 12,
-    textAlign: 'right',
-  },
-
-  topBar: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    zIndex: 10,
-  },
-  brandPill: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(8,15,31,0.4)',
-  },
-  brandDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: palette.live,
-    shadowColor: palette.live,
-    shadowOpacity: 0.7,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 3,
-  },
-  brandCol: { alignItems: 'flex-end' },
-  brandHe: { color: colors.white, fontSize: 19, fontWeight: '900', lineHeight: 22 },
-  brandEn: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-  topRight: {
-    alignItems: 'flex-end',
-    gap: 8,
-    maxWidth: 220,
-    flexShrink: 1,
-  },
-  toggle: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: palette.hairlineStrong,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(8,15,31,0.4)',
-  },
-  toggleText: { color: colors.electricBright, fontWeight: '800', fontSize: 13 },
-
-  previewWrap: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    zIndex: 15,
-    alignItems: 'stretch',
-  },
-  previewCard: {
-    backgroundColor: 'rgba(11, 20, 38, 0.96)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(147, 197, 253, 0.55)',
-    padding: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 18,
-  },
-  previewTop: {
-    flexDirection: 'row-reverse',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  previewTextCol: { flex: 1, alignItems: 'flex-end' },
-  previewCat: { color: colors.electricBright, fontWeight: '800', fontSize: 12 },
-  previewQ: {
-    color: colors.white,
-    fontWeight: '800',
-    fontSize: 16,
-    marginTop: 4,
-    textAlign: 'right',
-    flexShrink: 1,
-  },
-  previewMeta: {
-    color: colors.textSecondary,
-    marginTop: 8,
-    fontSize: 12,
-    textAlign: 'right',
-  },
-  previewCtaRow: {
-    marginTop: 12,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-    paddingTop: 10,
-  },
-  previewCta: { color: colors.electricBright, fontWeight: '800', fontSize: 14 },
-  previewChevron: { color: colors.electricBright, fontSize: 22, fontWeight: '700' },
-  previewDismiss: {
-    alignSelf: 'center',
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  previewDismissText: { color: colors.textSecondary, fontWeight: '700', fontSize: 13 },
-
-  selectedPointMarker: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(250, 204, 21, 0.95)',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 8,
-  },
-  selectedPointInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.navy,
-  },
-});

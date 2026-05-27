@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -21,6 +20,7 @@ import type { Answer, Drop } from '../types/api';
 import { closeOwnDrop, ensureAnonymousSession, fetchAnswers, fetchDrop } from '../lib/api';
 import { hideAnswer, hideDrop, useHiddenContent } from '../lib/hiddenContent';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
+import { combineDropDetailsResults } from '../lib/dropDetailsState';
 import { connectSocket, getSocket } from '../lib/socket';
 import { categoryHe } from '../lib/categories';
 import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
@@ -28,6 +28,7 @@ import { trustLabelHe } from '../lib/simulatedIntel';
 import { quickStatusLabel } from '../lib/answerOptions';
 import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
 import type { LocationSource } from '../lib/devLocation';
+import { styles } from './DropDetailsScreen.styles';
 
 type Props = NativeStackScreenProps<DropFlowParamList, 'DropDetails'>;
 
@@ -45,6 +46,13 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   );
   const [justNow, setJustNow] = useState(false);
 
+  const dropRef = useRef<Drop | null>(cachedDrop ?? null);
+  const answersRef = useRef<Answer[]>([]);
+  const lastUpdateAtRef = useRef<string>(cachedDrop?.createdAt ?? new Date().toISOString());
+  dropRef.current = drop;
+  answersRef.current = answers;
+  lastUpdateAtRef.current = lastUpdateAt;
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -54,37 +62,21 @@ export function DropDetailsScreen({ navigation, route }: Props) {
         fetchAnswers(dropId),
       ]);
 
-      let hadApiFailure = false;
-      let firstErr: unknown;
+      const combined = combineDropDetailsResults({
+        dropResult: dRes,
+        answersResult: aRes,
+        cachedDrop: cachedDrop ?? null,
+        dropId,
+        previousDrop: dropRef.current,
+        previousAnswers: answersRef.current,
+        previousLastUpdateAt: lastUpdateAtRef.current,
+      });
 
-      if (dRes.status === 'fulfilled') {
-        setDrop(dRes.value);
-        setLastUpdateAt(new Date().toISOString());
-      } else {
-        hadApiFailure = true;
-        firstErr = dRes.reason;
-        if (cachedDrop?.id === dropId) {
-          setDrop(cachedDrop);
-          setLastUpdateAt(cachedDrop.createdAt);
-        }
-      }
-
-      if (aRes.status === 'fulfilled') {
-        setAnswers(aRes.value);
-      } else {
-        hadApiFailure = true;
-        if (firstErr === undefined) firstErr = aRes.reason;
-      }
-
-      if (hadApiFailure) {
-        setFetchError(true);
-        setFetchErrorMsg(
-          apiUserMessageHeAuto(firstErr ?? new Error('בקשה נכשלה')),
-        );
-      } else {
-        setFetchError(false);
-        setFetchErrorMsg(null);
-      }
+      setDrop(combined.drop);
+      setAnswers(combined.answers);
+      setLastUpdateAt(combined.lastUpdateAt);
+      setFetchError(combined.fetchError);
+      setFetchErrorMsg(combined.fetchErrorMessageHe);
     } catch (e) {
       setFetchError(true);
       setFetchErrorMsg(apiUserMessageHeAuto(e));
@@ -268,7 +260,22 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   if (!drop) {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>לא נמצא</Text>
+        <Text style={styles.centerTitle}>לא הצלחנו לטעון את השאלה</Text>
+        <Text style={styles.centerMuted}>
+          {fetchErrorMsg ?? 'ייתכן שהשאלה נסגרה או שיש בעיית רשת. נסה שוב.'}
+        </Text>
+        <Button
+          label="נסה שוב"
+          icon="refresh"
+          onPress={() => void reload()}
+          fullWidth={false}
+        />
+        <Button
+          label="חזור"
+          variant="ghost"
+          onPress={() => navigation.goBack()}
+          fullWidth={false}
+        />
       </View>
     );
   }
@@ -480,214 +487,3 @@ export function DropDetailsScreen({ navigation, route }: Props) {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
-  mapBox: { height: 200, marginHorizontal: 12, marginTop: 8, borderRadius: 16, overflow: 'hidden' },
-  map: { flex: 1 },
-  mapFallback: {
-    flex: 1,
-    backgroundColor: colors.navyMuted,
-    justifyContent: 'center',
-    padding: 12,
-  },
-  coords: { color: colors.textSecondary, marginTop: 8, fontSize: 12, textAlign: 'right' },
-  errorBanner: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
-    alignItems: 'stretch',
-    alignSelf: 'stretch',
-  },
-  errorBannerSoft: {
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
-    borderColor: 'rgba(248, 113, 113, 0.22)',
-  },
-  errorBannerTitle: {
-    color: '#FECACA',
-    fontSize: 14,
-    fontWeight: '900',
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  errorBannerSub: {
-    marginTop: 8,
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 19,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-  },
-  errorBannerRetry: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-  },
-  justNowRow: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-end',
-  },
-  justNowDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4ADE80',
-  },
-  justNowText: { color: '#BBF7D0', fontWeight: '900', fontSize: 13 },
-  statsRow: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    justifyContent: 'flex-end',
-  },
-  statPill: {
-    minWidth: 76,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: colors.bubble,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-    alignItems: 'center',
-  },
-  statPillWide: {
-    flexGrow: 1,
-    minWidth: 120,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'flex-end',
-  },
-  statVal: { color: colors.white, fontWeight: '900', fontSize: 18 },
-  statLbl: { color: colors.textSecondary, fontSize: 11, marginTop: 2, fontWeight: '700' },
-  statTime: { color: colors.electricBright, fontSize: 14, fontWeight: '800', marginTop: 2 },
-  statFreshness: { fontSize: 11, fontWeight: '800', marginTop: 2 },
-  freshnessLive: { color: '#86EFAC' },
-  freshnessFresh: { color: '#BBF7D0' },
-  freshnessStale: { color: '#FDE047' },
-  freshnessOutdated: { color: colors.textSecondary },
-  trustRow: { marginHorizontal: 16, marginTop: 10, alignItems: 'flex-end' },
-  trustText: { fontSize: 12, fontWeight: '800' },
-  trustHigh: { color: '#86EFAC' },
-  trustMid: { color: '#FDE047' },
-  trustLow: { color: colors.textSecondary },
-  block: { padding: 16, alignItems: 'flex-end' },
-  pillRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(37, 99, 235, 0.35)',
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-  },
-  pillText: { color: colors.electricBright, fontWeight: '800', fontSize: 12 },
-  pillMuted: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  pillMutedText: { color: colors.textSecondary, fontWeight: '700', fontSize: 12 },
-  q: { color: colors.white, fontSize: 19, fontWeight: '900', textAlign: 'right' },
-  meta: { color: colors.textSecondary, marginTop: 10, textAlign: 'right', fontSize: 13, lineHeight: 18 },
-  ai: {
-    marginHorizontal: 16,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: colors.bubble,
-    borderWidth: 1,
-    borderColor: colors.bubbleBorder,
-  },
-  aiTitle: { color: colors.electricBright, fontWeight: '900', marginBottom: 8, textAlign: 'right' },
-  aiBody: { color: colors.white, lineHeight: 22, textAlign: 'right' },
-  aiMeta: { color: colors.textSecondary, marginTop: 8, fontSize: 12, textAlign: 'right' },
-  answerCta: {
-    marginHorizontal: 16,
-    marginTop: 16,
-  },
-  blockedBanner: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  blockedBannerOwner: {
-    backgroundColor: 'rgba(37, 99, 235, 0.18)',
-    borderColor: 'rgba(147, 197, 253, 0.45)',
-  },
-  blockedBannerText: {
-    color: colors.white,
-    fontWeight: '800',
-    fontSize: 14,
-    textAlign: 'right',
-    writingDirection: 'rtl',
-    lineHeight: 20,
-  },
-  section: {
-    color: colors.white,
-    fontWeight: '900',
-    marginTop: 22,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    textAlign: 'right',
-    alignSelf: 'stretch',
-  },
-  emptyAnswers: {
-    color: colors.textSecondary,
-    marginHorizontal: 16,
-    marginBottom: 10,
-    textAlign: 'right',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-  answerRow: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: colors.navyMuted,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  answerTop: { flexDirection: 'row-reverse', alignItems: 'flex-start', gap: 10 },
-  answerBody: { flex: 1, alignItems: 'flex-end' },
-  answerStatus: { color: colors.electricBright, fontWeight: '800', marginBottom: 4, textAlign: 'right', fontSize: 15 },
-  answerText: { color: colors.white, textAlign: 'right' },
-  answerMeta: { color: colors.textSecondary, marginTop: 6, fontSize: 12, textAlign: 'right' },
-  answerActions: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  answerActionLink: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    writingDirection: 'rtl',
-  },
-  answerActionSep: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
-  muted: { color: colors.textSecondary, marginHorizontal: 16, textAlign: 'right' },
-});

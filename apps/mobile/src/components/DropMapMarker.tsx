@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme/colors';
 import type { Drop } from '../types/api';
@@ -13,7 +13,7 @@ type Props = {
   animateEntrance?: boolean;
 };
 
-export function DropMapMarker({ drop, compact, live = true, animateEntrance }: Props) {
+function DropMapMarkerBase({ drop, compact, live = true, animateEntrance }: Props) {
   const icon = categoryMarkerIcon[drop.category] ?? '●';
   const cat = categoryHe(drop.category);
   const count = drop.answerCount;
@@ -100,6 +100,22 @@ export function DropMapMarker({ drop, compact, live = true, animateEntrance }: P
     </Animated.View>
   );
 }
+
+export const DropMapMarker = memo(DropMapMarkerBase, (prev, next) => {
+  // The marker only depends on the drop's identity, answer count, status,
+  // and the entrance/compact flags. Re-skip when those didn't change so
+  // that frequent parent re-renders (region/clock ticks) don't reconcile
+  // every marker in the list.
+  return (
+    prev.drop.id === next.drop.id &&
+    prev.drop.answerCount === next.drop.answerCount &&
+    prev.drop.category === next.drop.category &&
+    prev.drop.status === next.drop.status &&
+    prev.compact === next.compact &&
+    prev.live === next.live &&
+    prev.animateEntrance === next.animateEntrance
+  );
+});
 
 const styles = StyleSheet.create({
   wrapCompact: { alignItems: 'center', justifyContent: 'center' },

@@ -165,15 +165,16 @@ export function MyQuestionsScreen({ navigation }: Props) {
   return (
     <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
       <View style={styles.headerRow}>
-        <Text style={styles.screenTitle}>השאלות שלי</Text>
+        <Text style={styles.screenTitle} numberOfLines={1}>השאלות שלי</Text>
         <PressableScale
           haptic="none"
           hitSlop={10}
           onPress={() => navigation.navigate('About')}
           accessibilityRole="button"
           accessibilityLabel="מידע, פרטיות ובטיחות"
+          style={styles.aboutLinkWrap}
         >
-          <Text style={styles.aboutLink}>מידע, פרטיות ובטיחות</Text>
+          <Text style={styles.aboutLink} numberOfLines={1}>מידע ופרטיות</Text>
         </PressableScale>
       </View>
       <Text style={styles.screenSub}>
@@ -275,6 +276,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     textAlign: 'right',
     writingDirection: 'rtl',
+    flexShrink: 0,
+  },
+  aboutLinkWrap: {
+    flexShrink: 1,
+    marginStart: 8,
   },
   aboutLink: {
     color: colors.electricBright,
