@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { RootErrorBoundary } from './src/components/RootErrorBoundary';
 import { logMobileApiBootstrap } from './src/lib/bootstrapLog';
+import { track } from './src/lib/analytics';
 import { colors } from './src/theme/colors';
 
 if (
@@ -40,6 +41,7 @@ const navTheme = {
 export default function App() {
   useEffect(() => {
     void logMobileApiBootstrap();
+    track('app_opened', { source: 'App' });
   }, []);
 
   return (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -17,6 +17,8 @@ import { PressableScale } from '../components/ui/PressableScale';
 import { Button } from '../components/ui/Button';
 import { notifySuccess, notifyError } from '../lib/haptics';
 import { createDrop, ensureAnonymousSession } from '../lib/api';
+import { track } from '../lib/analytics';
+import { registerForPushNotifications } from '../lib/push';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
 import { validateQuestion } from '../lib/questionValidation';
 import { suggestedQuestionsHe, starterSuggestionsHe } from '../lib/suggestedQuestionsHe';
@@ -31,6 +33,10 @@ export function CreateDropScreen({ navigation, route }: Props) {
   const [question, setQuestion] = useState('');
   const [radius, setRadius] = useState('220');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    track('question_started', { lat, lng, source: 'CreateDrop' });
+  }, [lat, lng]);
 
   const inferredCategory = useMemo(() => inferCategory(question), [question]);
 
@@ -93,7 +99,16 @@ export function CreateDropScreen({ navigation, route }: Props) {
 
     if (!drop) return;
 
+    track('question_submitted', {
+      dropId: drop.id,
+      lat,
+      lng,
+      radiusMeters,
+      source: 'CreateDrop',
+    });
     notifySuccess();
+    // Now that the user has a question, ask for push permission so they hear about answers.
+    void registerForPushNotifications();
     navigation.navigate({
       name: 'Map',
       params: {

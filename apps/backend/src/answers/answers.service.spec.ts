@@ -31,6 +31,8 @@ describe('AnswersService', () => {
   };
   let realtime: { emitDropUpdated: jest.Mock };
   let users: { findById: jest.Mock };
+  let push: { notifyDropAnswered: jest.Mock };
+  let events: { track: jest.Mock };
   let service: AnswersService;
 
   beforeEach(() => {
@@ -46,6 +48,8 @@ describe('AnswersService', () => {
     };
     realtime = { emitDropUpdated: jest.fn() };
     users = { findById: jest.fn() };
+    push = { notifyDropAnswered: jest.fn().mockResolvedValue(undefined) };
+    events = { track: jest.fn().mockResolvedValue(undefined) };
     service = new AnswersService(
       answerModel as never,
       drops as never,
@@ -53,6 +57,8 @@ describe('AnswersService', () => {
       ai,
       realtime as never,
       users as never,
+      push as never,
+      events as never,
     );
   });
 
@@ -130,6 +136,63 @@ describe('AnswersService', () => {
     expect(drops.incrementAnswerCount).toHaveBeenCalledWith(dropId);
     expect(drops.updateAiSummary).toHaveBeenCalled();
     expect(realtime.emitDropUpdated).toHaveBeenCalled();
+  });
+
+  it('notifies the asker (not the answerer) with their drop question', async () => {
+    const askerId = new Types.ObjectId();
+    drops.getRawDropForAnswer.mockResolvedValue(
+      makeRawDrop({ createdBy: askerId, question: 'יש תור בסניף?' }),
+    );
+    // 1st findById = answering user (trustScore), 2nd = asker (pushToken)
+    users.findById
+      .mockResolvedValueOnce({ trustScore: 50 })
+      .mockResolvedValueOnce({ pushToken: 'ExponentPushToken[abc]' });
+    answerModel.create.mockResolvedValue({
+      _id: new Types.ObjectId(),
+      dropId: new Types.ObjectId(),
+      userId: new Types.ObjectId(),
+      text: 'כן',
+      quickStatus: QuickStatus.YES,
+      distanceFromDrop: 0,
+      trustWeight: 0.5,
+      createdAt: new Date(),
+    });
+
+    await service.create(
+      new Types.ObjectId().toString(),
+      new Types.ObjectId().toString(),
+      { text: 'כן', quickStatus: QuickStatus.YES, lat: 32.08, lng: 34.78 },
+    );
+
+    expect(push.notifyDropAnswered).toHaveBeenCalledWith(
+      'ExponentPushToken[abc]',
+      'יש תור בסניף?',
+    );
+  });
+
+  it('does not notify when the asker has no push token', async () => {
+    drops.getRawDropForAnswer.mockResolvedValue(makeRawDrop());
+    users.findById
+      .mockResolvedValueOnce({ trustScore: 50 })
+      .mockResolvedValueOnce({ trustScore: 50 });
+    answerModel.create.mockResolvedValue({
+      _id: new Types.ObjectId(),
+      dropId: new Types.ObjectId(),
+      userId: new Types.ObjectId(),
+      text: 't',
+      quickStatus: QuickStatus.YES,
+      distanceFromDrop: 0,
+      trustWeight: 0.5,
+      createdAt: new Date(),
+    });
+
+    await service.create(
+      new Types.ObjectId().toString(),
+      new Types.ObjectId().toString(),
+      { text: 't', quickStatus: QuickStatus.YES, lat: 32.08, lng: 34.78 },
+    );
+
+    expect(push.notifyDropAnswered).not.toHaveBeenCalled();
   });
 
   it('defaults trustWeight to 0.5 when user has no trustScore', async () => {

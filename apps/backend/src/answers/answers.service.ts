@@ -12,6 +12,8 @@ import { GeoService } from '../geo/geo.service';
 import { AiSummaryService } from '../ai-summary/ai-summary.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { UsersService } from '../users/users.service';
+import { PushService } from '../notifications/push.service';
+import { EventsService } from '../events/events.service';
 
 @Injectable()
 export class AnswersService {
@@ -22,6 +24,8 @@ export class AnswersService {
     private readonly ai: AiSummaryService,
     private readonly realtime: RealtimeService,
     private readonly users: UsersService,
+    private readonly push: PushService,
+    private readonly events: EventsService,
   ) {}
 
   async create(dropId: string, userId: string, dto: CreateAnswerDto) {
@@ -54,6 +58,14 @@ export class AnswersService {
 
     await this.drops.incrementAnswerCount(dropId);
     await this.refreshAiAndNotify(dropId, String(drop.createdBy));
+    await this.notifyAsker(String(drop.createdBy), userId, drop.question);
+
+    if (String(drop.createdBy) !== String(userId)) {
+      await this.events.track('answer_received_by_asker', String(drop.createdBy), {
+        dropId,
+        source: 'backend',
+      });
+    }
 
     return this.toPublicAnswer(doc, userId);
   }
@@ -66,6 +78,22 @@ export class AnswersService {
       .limit(200)
       .exec();
     return rows.map((a) => this.toPublicAnswer(a, viewerUserId));
+  }
+
+  /** Best-effort: tell the original asker their drop got an answer. Never throws. */
+  private async notifyAsker(
+    askerUserId: string,
+    answerUserId: string,
+    question: string,
+  ) {
+    try {
+      if (askerUserId === String(answerUserId)) return;
+      const asker = await this.users.findById(askerUserId);
+      if (!asker?.pushToken) return;
+      await this.push.notifyDropAnswered(asker.pushToken, question);
+    } catch {
+      /* push must never break answer creation */
+    }
   }
 
   private async refreshAiAndNotify(dropId: string, creatorUserId: string) {

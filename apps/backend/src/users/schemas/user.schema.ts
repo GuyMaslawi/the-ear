@@ -29,6 +29,9 @@ export class User {
   @Prop({ type: Number, default: 50, min: 0, max: 100 })
   trustScore: number;
 
+  @Prop({ type: String })
+  pushToken?: string;
+
   createdAt: Date;
 }
 

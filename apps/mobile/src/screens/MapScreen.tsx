@@ -36,6 +36,7 @@ import {
   fetchNearbyDrops,
   patchUserLocation,
 } from '../lib/api';
+import { track } from '../lib/analytics';
 import {
   apiUserMessageHe,
   apiUserMessageHeAuto,
@@ -78,6 +79,7 @@ export function MapScreen({ navigation }: Props) {
     longitudeDelta: 0.06,
   });
   const [selectedPoint, setSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [trackSelectedMarker, setTrackSelectedMarker] = useState(false);
   const [apiDrops, setApiDrops] = useState<Drop[]>([]);
   const [extraById, setExtraById] = useState<Record<string, Drop>>({});
   const [loadingDrops, setLoadingDrops] = useState(false);
@@ -225,6 +227,8 @@ export function MapScreen({ navigation }: Props) {
     (lat: number, lng: number) => {
       setPreviewDrop(null);
       setSelectedPoint({ lat, lng });
+      setTrackSelectedMarker(true);
+      track('location_selected', { lat, lng, source: 'Map' });
       tapLight();
       mapRef.current?.animateCamera(
         { center: { latitude: lat, longitude: lng } },
@@ -234,6 +238,12 @@ export function MapScreen({ navigation }: Props) {
     },
     [loadDrops],
   );
+
+  useEffect(() => {
+    if (!trackSelectedMarker) return;
+    const t = setTimeout(() => setTrackSelectedMarker(false), 600);
+    return () => clearTimeout(t);
+  }, [trackSelectedMarker, selectedPoint]);
 
   const onMapPress = useCallback(
     (_e: MapPressEvent) => {
@@ -430,14 +440,15 @@ export function MapScreen({ navigation }: Props) {
     locationPermissionDenied,
   });
 
-  const listFallback = (
+  const renderListFallback = (showFallbackNotice: boolean) => (
     <View style={styles.listWrap}>
-      <MapFallbackNotice />
+      {showFallbackNotice ? <MapFallbackNotice /> : null}
       <DropsListFallback
         drops={drops}
         onSelect={openDetails}
         nowMs={clock}
         emptyMessage={listEmptyMessage}
+        bottomInset={listOnly ? insets.bottom + 24 : sheetBottomPx + 24}
       />
     </View>
   );
@@ -463,9 +474,9 @@ export function MapScreen({ navigation }: Props) {
       ) : null}
 
       {listOnly ? (
-        listFallback
+        renderListFallback(false)
       ) : (
-        <MapErrorBoundary fallback={listFallback}>
+        <MapErrorBoundary fallback={renderListFallback(true)}>
           <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFill}
@@ -517,7 +528,7 @@ export function MapScreen({ navigation }: Props) {
                   longitude: selectedPoint.lng,
                 }}
                 anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
+                tracksViewChanges={trackSelectedMarker}
               >
                 <View style={styles.selectedPointMarker}>
                   <View style={styles.selectedPointInner} />
@@ -646,33 +657,35 @@ export function MapScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      <NearbyDropsSheet
-        drops={drops}
-        loading={loadingDrops}
-        refreshing={loadingDrops && drops.length > 0}
-        nowMs={clock}
-        hasSelectedPoint={!!selectedPoint}
-        onClearSelectedPoint={clearSelectedPoint}
-        areaHint={
-          selectedPoint
-            ? 'השאלה תפורסם בנקודה שבחרת במפה · לחץ על הסיכה לביטול'
-            : 'לחיצה ארוכה על המפה תבחר נקודה לשאלה · הרשימה מתעדכנת לפי מרכז המפה'
-        }
-        emptyHint={
-          nearbyPhase === 'error' && nearbyUserMessage
-            ? nearbyUserMessage
-            : locationPermissionDenied
-              ? `${NO_NEARBY_QUESTIONS_MESSAGE_HE} (${LOCATION_PERMISSION_MESSAGE_HE})`
-              : NO_NEARBY_QUESTIONS_MESSAGE_HE
-        }
-        onRefresh={() => {
-          const r = regionRef.current;
-          void loadDrops(r.latitude, r.longitude);
-        }}
-        onSelect={openDetails}
-        onAsk={openAsk}
-        onLiveFeed={openLiveFeed}
-      />
+      {!listOnly ? (
+        <NearbyDropsSheet
+          drops={drops}
+          loading={loadingDrops}
+          refreshing={loadingDrops && drops.length > 0}
+          nowMs={clock}
+          hasSelectedPoint={!!selectedPoint}
+          onClearSelectedPoint={clearSelectedPoint}
+          areaHint={
+            selectedPoint
+              ? 'השאלה תפורסם בנקודה שבחרת במפה · לחץ על הסיכה לביטול'
+              : 'לחיצה ארוכה על המפה תבחר נקודה לשאלה · הרשימה מתעדכנת לפי מרכז המפה'
+          }
+          emptyHint={
+            nearbyPhase === 'error' && nearbyUserMessage
+              ? nearbyUserMessage
+              : locationPermissionDenied
+                ? `${NO_NEARBY_QUESTIONS_MESSAGE_HE} (${LOCATION_PERMISSION_MESSAGE_HE})`
+                : NO_NEARBY_QUESTIONS_MESSAGE_HE
+          }
+          onRefresh={() => {
+            const r = regionRef.current;
+            void loadDrops(r.latitude, r.longitude);
+          }}
+          onSelect={openDetails}
+          onAsk={openAsk}
+          onLiveFeed={openLiveFeed}
+        />
+      ) : null}
 
       <QuestionSubmittedSheet
         visible={!!celebrationDrop}

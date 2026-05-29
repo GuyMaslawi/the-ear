@@ -7,6 +7,8 @@ import { DropsModule } from '../drops/drops.module';
 import { AiSummaryModule } from '../ai-summary/ai-summary.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { UsersModule } from '../users/users.module';
     AiSummaryModule,
     RealtimeModule,
     UsersModule,
+    NotificationsModule,
+    EventsModule,
   ],
   controllers: [AnswersController],
   providers: [AnswersService],

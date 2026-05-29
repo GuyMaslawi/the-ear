@@ -217,6 +217,32 @@ export async function ensureAnonymousSession(): Promise<AnonymousSession> {
   return ensureAnonymousSessionInFlight;
 }
 
+export async function postEvent(body: {
+  name: string;
+  dropId?: string;
+  lat?: number;
+  lng?: number;
+  radiusMeters?: number;
+  source?: string;
+  platform?: string;
+}) {
+  return request<{ ok: boolean }>('/events', {
+    method: 'POST',
+    endpointName: 'post_event',
+    json: body,
+    logParams: { name: body.name },
+    retry: false,
+  });
+}
+
+export async function registerPushToken(token: string) {
+  return request<{ ok: boolean }>('/users/push-token', {
+    method: 'POST',
+    endpointName: 'register_push_token',
+    json: { token },
+  });
+}
+
 export async function patchUserLocation(lat: number, lng: number) {
   return request<{ ok: boolean }>('/users/location', {
     method: 'PATCH',

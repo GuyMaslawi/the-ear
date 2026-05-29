@@ -9,6 +9,7 @@ import { GeoModule } from './geo/geo.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AiSummaryModule } from './ai-summary/ai-summary.module';
 import { ReportsModule } from './reports/reports.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ReportsModule } from './reports/reports.module';
     DropsModule,
     AnswersModule,
     ReportsModule,
+    EventsModule,
   ],
 })
 export class AppModule {}

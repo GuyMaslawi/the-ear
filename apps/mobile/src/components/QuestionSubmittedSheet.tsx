@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Drop } from '../types/api';
 import { colors } from '../theme/colors';
 import { palette } from '../theme/theme';
+import { shareDrop } from '../lib/shareDrop';
 import { Button } from './ui/Button';
 
 type Props = {
@@ -96,6 +97,13 @@ export function QuestionSubmittedSheet({
             label="פתח את השאלה"
             icon="open"
             onPress={() => onOpenQuestion(drop)}
+            style={styles.ctaSpacing}
+          />
+          <Button
+            label="שתף כדי לקבל תשובות"
+            icon="share-social"
+            variant="ghost"
+            onPress={() => void shareDrop(drop)}
             style={styles.ctaSpacing}
           />
           <Button

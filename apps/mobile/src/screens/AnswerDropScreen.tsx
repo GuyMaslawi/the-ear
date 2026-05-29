@@ -19,6 +19,7 @@ import { Button } from '../components/ui/Button';
 import { tapLight, notifySuccess, notifyError } from '../lib/haptics';
 import type { AnswerOption, Drop, QuickStatus } from '../types/api';
 import { fetchDrop, postAnswer, ensureAnonymousSession } from '../lib/api';
+import { track } from '../lib/analytics';
 import { apiUserMessageHeAuto, LOCATION_PERMISSION_MESSAGE_HE } from '../lib/apiErrors';
 import { getAnswerOptions } from '../lib/answerOptions';
 import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
@@ -115,6 +116,12 @@ export function AnswerDropScreen({ navigation, route }: Props) {
         Alert.alert('לא נשלח', apiUserMessageHeAuto(e));
         return;
       }
+      track('answer_submitted', {
+        dropId,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        source: 'AnswerDrop',
+      });
       notifySuccess();
       navigation.goBack();
     } finally {

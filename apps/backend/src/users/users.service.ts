@@ -30,6 +30,12 @@ export class UsersService {
     return doc;
   }
 
+  async setPushToken(userId: string, pushToken: string) {
+    await this.userModel
+      .findByIdAndUpdate(userId, { pushToken })
+      .exec();
+  }
+
   async updateLocation(userId: string, lat: number, lng: number) {
     const point = this.geo.point(lat, lng);
     const doc = await this.userModel

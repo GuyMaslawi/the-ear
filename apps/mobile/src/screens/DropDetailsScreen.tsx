@@ -27,6 +27,8 @@ import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
 import { trustLabelHe } from '../lib/simulatedIntel';
 import { quickStatusLabel } from '../lib/answerOptions';
 import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
+import { shareDrop } from '../lib/shareDrop';
+import { track } from '../lib/analytics';
 import type { LocationSource } from '../lib/devLocation';
 import { styles } from './DropDetailsScreen.styles';
 
@@ -92,6 +94,10 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    track('drop_details_opened', { dropId, source: 'DropDetails' });
+  }, [dropId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,21 +228,37 @@ export function DropDetailsScreen({ navigation, route }: Props) {
     Alert.alert('פעולות', undefined, buttons);
   }, [drop?.isMine, openReportDrop, confirmHideDrop, confirmCloseOwn]);
 
+  const shareCurrent = useCallback(() => {
+    if (drop) void shareDrop(drop);
+  }, [drop]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable
-          onPress={openMenu}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="פעולות נוספות"
-          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingHorizontal: 8 })}
-        >
-          <Ionicons name="ellipsis-horizontal" size={22} color={colors.white} />
-        </Pressable>
+        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 4 }}>
+          <Pressable
+            onPress={shareCurrent}
+            hitSlop={12}
+            disabled={!drop}
+            accessibilityRole="button"
+            accessibilityLabel="שתף שאלה"
+            style={({ pressed }) => ({ opacity: pressed || !drop ? 0.6 : 1, paddingHorizontal: 8 })}
+          >
+            <Ionicons name="share-social" size={21} color={colors.white} />
+          </Pressable>
+          <Pressable
+            onPress={openMenu}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="פעולות נוספות"
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingHorizontal: 8 })}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.white} />
+          </Pressable>
+        </View>
       ),
     });
-  }, [navigation, openMenu]);
+  }, [navigation, openMenu, shareCurrent, drop]);
 
   const reportAnswer = useCallback(
     (answerId: string) => {

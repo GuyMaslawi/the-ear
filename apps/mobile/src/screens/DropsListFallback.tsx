@@ -9,13 +9,21 @@ type Props = {
   onSelect: (d: Drop) => void;
   nowMs: number;
   emptyMessage: string;
+  /** Reserved space at the bottom so list rows don't touch the overlaid sheet. */
+  bottomInset?: number;
 };
 
-export function DropsListFallback({ drops, onSelect, nowMs, emptyMessage }: Props) {
+export function DropsListFallback({
+  drops,
+  onSelect,
+  nowMs,
+  emptyMessage,
+  bottomInset = 200,
+}: Props) {
   return (
     <ScrollView
       style={styles.listScroll}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: bottomInset }]}
       keyboardShouldPersistTaps="handled"
     >
       {drops.length === 0 ? (
@@ -39,7 +47,7 @@ export function DropsListFallback({ drops, onSelect, nowMs, emptyMessage }: Prop
 
 const styles = StyleSheet.create({
   listScroll: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 200 },
+  listContent: { paddingHorizontal: 16, paddingTop: 12 },
   listEmpty: {
     color: colors.textSecondary,
     textAlign: 'center',

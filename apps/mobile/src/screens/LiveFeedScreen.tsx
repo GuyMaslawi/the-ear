@@ -28,6 +28,7 @@ import { PressableScale } from '../components/ui/PressableScale';
 import { Button } from '../components/ui/Button';
 import { tapLight, tapMedium, notifySuccess, notifyError } from '../lib/haptics';
 import { ensureAnonymousSession, fetchNearbyDrops, postAnswer } from '../lib/api';
+import { track } from '../lib/analytics';
 import { connectSocket, getSocket } from '../lib/socket';
 import {
   apiUserMessageHeAuto,
@@ -487,6 +488,12 @@ export function LiveFeedScreen({ navigation }: Props) {
           Alert.alert('לא נשלח', apiUserMessageHeAuto(e));
           return;
         }
+        track('answer_submitted', {
+          dropId,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          source: 'LiveFeed',
+        });
         setDrops((prev) =>
           prev.map((d) =>
             d.id === dropId ? { ...d, answerCount: d.answerCount + 1 } : d,
