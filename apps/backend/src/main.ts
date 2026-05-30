@@ -22,12 +22,26 @@ async function bootstrap() {
 
   const mongo: Connection = app.get(getConnectionToken());
   const uri = config.get<string>('MONGODB_URI') ?? '';
+  const safeHost = parseMongoHost(uri);
+  const env = process.env.NODE_ENV ?? 'development';
   const logMongo = () =>
     Logger.log(
-      `MongoDB connected (${mongo.name}) ${uri.replace(/:[^:@/]+@/, ':****@')}`,
+      `MongoDB connected db=${mongo.name} host=${safeHost} env=${env}`,
       'Bootstrap',
     );
   if (mongo.readyState === 1) logMongo();
   else mongo.once('connected', logMongo);
+}
+
+// Extract only the host from a MongoDB URI — never credentials, query string,
+// or path. Returns 'unknown' if the URI is missing/unparseable so a malformed
+// URI can never fall through to a raw log.
+function parseMongoHost(uri: string): string {
+  if (!uri) return 'unknown';
+  try {
+    return new URL(uri).hostname || 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 bootstrap();

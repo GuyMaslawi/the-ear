@@ -10,8 +10,10 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { AiSummaryModule } from './ai-summary/ai-summary.module';
 import { ReportsModule } from './reports/reports.module';
 import { EventsModule } from './events/events.module';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRootAsync({

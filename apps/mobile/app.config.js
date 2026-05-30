@@ -87,6 +87,10 @@ module.exports = {
       apiBaseUrl,
       socketUrl,
       buildProfile: profile || 'dev',
+      eas: {
+        ...(appJson.expo.extra && appJson.expo.extra.eas),
+        projectId: '6638d25c-f124-4180-91a9-ab261f0fc609',
+      },
     },
   },
 };

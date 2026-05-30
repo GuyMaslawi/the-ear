@@ -162,6 +162,13 @@ async function run() {
 }
 
 run().catch((e) => {
-  console.error(e);
+  const msg = (e as Error)?.message ?? String(e);
+  console.error('Seed failed:', redactMongoUri(msg));
   process.exit(1);
 });
+
+// Defensive: Mongo driver errors frequently embed the connection URI in their
+// message. Strip the userinfo segment so a failure can't leak the password.
+function redactMongoUri(s: string): string {
+  return s.replace(/(mongodb(?:\+srv)?:\/\/)[^@\s/]+@/gi, '$1***@');
+}

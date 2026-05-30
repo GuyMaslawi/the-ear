@@ -41,6 +41,40 @@ End-to-end tests (`npm run test:e2e`) expect MongoDB reachable at `MONGODB_URI`.
 
 **Mobile (Expo):** `apps/mobile` in this repo. For a physical device, set `EXPO_PUBLIC_API_URL` to your computer’s LAN address (same port as the API). Android emulator often uses `http://10.0.2.2:3000`.
 
+### Health check
+
+`GET /health` returns `{ status, mongo, uptime, timestamp }`. Use it to confirm the deployed backend is up and that Mongo is connected (no auth required).
+
+### Preview / production mobile builds (Render backend)
+
+The deployed backend lives at `https://the-ear.onrender.com`. Shippable Expo builds (EAS `preview` / `production`) must point at this HTTPS origin — `app.config.js` rejects local/LAN/HTTP URLs at build time.
+
+Set EAS env vars (shell env when running `eas build`, or as EAS secrets):
+
+```bash
+export EXPO_PUBLIC_API_URL=https://the-ear.onrender.com
+export EXPO_PUBLIC_SOCKET_URL=https://the-ear.onrender.com
+export EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY=<android-maps-key>   # Android only
+```
+
+Or store them once as secrets so every build picks them up:
+
+```bash
+eas secret:create --name EXPO_PUBLIC_API_URL --value https://the-ear.onrender.com
+eas secret:create --name EXPO_PUBLIC_SOCKET_URL --value https://the-ear.onrender.com
+eas secret:create --name EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY --value <android-maps-key>
+```
+
+Then build:
+
+```bash
+cd apps/mobile
+eas build --profile preview --platform ios
+eas build --profile preview --platform android
+```
+
+Verify the resulting build talks to Render: open the installed app, watch Render logs for incoming requests, or check `GET /health` from the device’s network and confirm the app fetches drops without a "Network request failed" error.
+
 ---
 
 ## Description
