@@ -1,9 +1,50 @@
-import { Linking, ScrollView, StyleSheet, Text } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { colors } from '../theme/colors';
 import { SUPPORT_EMAIL } from '../lib/support';
 import { PRIVACY_POLICY_URL, TERMS_URL } from '../lib/legal';
+import { registerForPushNotifications } from '../lib/push';
+
+type PushStatus = 'granted' | 'denied' | 'undetermined' | 'unknown';
 
 export function AboutScreen() {
+  const [pushStatus, setPushStatus] = useState<PushStatus>('unknown');
+
+  const refreshPushStatus = useCallback(async () => {
+    try {
+      const res = await Notifications.getPermissionsAsync();
+      const s = res.status;
+      if (s === 'granted' || s === 'denied' || s === 'undetermined') {
+        setPushStatus(s);
+      } else {
+        setPushStatus('unknown');
+      }
+    } catch {
+      setPushStatus('unknown');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPushStatus();
+  }, [refreshPushStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshPushStatus();
+    }, [refreshPushStatus]),
+  );
+
+  const onEnableAnswerPush = async () => {
+    await registerForPushNotifications();
+    await refreshPushStatus();
+  };
+
+  const onOpenSystemSettings = () => {
+    void Linking.openSettings();
+  };
+
   const mailto = () => {
     void Linking.openURL(`mailto:${SUPPORT_EMAIL}`);
   };
@@ -16,6 +57,15 @@ export function AboutScreen() {
     void Linking.openURL(TERMS_URL);
   };
 
+  const answerStatusText =
+    pushStatus === 'granted'
+      ? 'מופעלות'
+      : pushStatus === 'denied'
+        ? 'חסומות במערכת — צריך לפתוח הגדרות'
+        : pushStatus === 'undetermined'
+          ? 'דורש אישור'
+          : '—';
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.navy }}
@@ -27,6 +77,62 @@ export function AboutScreen() {
         האוזן היא אפליקציית מידע מקומי בזמן אמת. הקטע הבא מסביר מה אנחנו אוספים,
         איך משתמשים בזה, ומה הציפיות מהקהילה.
       </Text>
+
+      <Text style={styles.h2}>התראות</Text>
+      <View style={styles.settingRow}>
+        <View style={styles.settingTextWrap}>
+          <Text style={styles.settingTitle}>התראות כשעונים לי</Text>
+          <Text style={styles.settingSub}>
+            סטטוס מערכת: {answerStatusText}
+          </Text>
+        </View>
+        {pushStatus === 'granted' ? (
+          <Pressable
+            onPress={onOpenSystemSettings}
+            style={({ pressed }) => [
+              styles.settingBtnGhost,
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="פתח הגדרות התראות במערכת"
+          >
+            <Text style={styles.settingBtnGhostText}>הגדרות מערכת</Text>
+          </Pressable>
+        ) : pushStatus === 'denied' ? (
+          <Pressable
+            onPress={onOpenSystemSettings}
+            style={({ pressed }) => [
+              styles.settingBtn,
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="פתח הגדרות מערכת"
+          >
+            <Text style={styles.settingBtnText}>פתח הגדרות</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={onEnableAnswerPush}
+            style={({ pressed }) => [
+              styles.settingBtn,
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="אפשר התראות"
+          >
+            <Text style={styles.settingBtnText}>אפשר התראות</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={[styles.settingRow, styles.settingRowDisabled]}>
+        <View style={styles.settingTextWrap}>
+          <Text style={styles.settingTitle}>התראות על שאלות באזור שלי</Text>
+          <Text style={styles.settingSub}>
+            בקרוב — לא פעיל בגרסה הנוכחית כדי למנוע ספאם.
+          </Text>
+        </View>
+        <Text style={styles.settingBadgeOff}>כבוי</Text>
+      </View>
 
       <Text style={styles.h2}>למה אנחנו משתמשים במיקום</Text>
       <Text style={styles.body}>
@@ -122,5 +228,75 @@ const styles = StyleSheet.create({
   link: {
     color: colors.electricBright,
     fontWeight: '800',
+  },
+  settingRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 10,
+  },
+  settingRowDisabled: {
+    opacity: 0.7,
+  },
+  settingTextWrap: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  settingTitle: {
+    color: colors.white,
+    fontWeight: '900',
+    fontSize: 14,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  settingSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    fontWeight: '600',
+  },
+  settingBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(59,130,246,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.55)',
+  },
+  settingBtnText: {
+    color: '#BFDBFE',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  settingBtnGhost: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  settingBtnGhostText: {
+    color: colors.textSecondary,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  settingBadgeOff: {
+    color: colors.textMuted,
+    fontWeight: '800',
+    fontSize: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
 });

@@ -31,6 +31,13 @@ export class Drop {
   @Prop({ type: Date, required: true, index: true })
   expiresAt: Date;
 
+  @Prop({ type: Date })
+  closedAt?: Date;
+
+  /** When the doc may be hard-deleted (expiry + retention window). */
+  @Prop({ type: Date })
+  purgeAt?: Date;
+
   @Prop({ type: Number, default: 0 })
   answerCount: number;
 
@@ -47,3 +54,6 @@ export const DropSchema = SchemaFactory.createForClass(Drop);
 
 DropSchema.index({ location: '2dsphere' });
 DropSchema.index({ status: 1, expiresAt: 1 });
+// Retention: only docs with a `purgeAt` date are removed, and only once it passes.
+// Open/active drops have no purgeAt, so they are never auto-deleted.
+DropSchema.index({ purgeAt: 1 }, { expireAfterSeconds: 0 });

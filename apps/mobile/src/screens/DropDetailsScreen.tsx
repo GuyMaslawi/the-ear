@@ -23,16 +23,38 @@ import { apiUserMessageHeAuto } from '../lib/apiErrors';
 import { combineDropDetailsResults } from '../lib/dropDetailsState';
 import { connectSocket, getSocket } from '../lib/socket';
 import { categoryHe } from '../lib/categories';
-import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
+import {
+  formatRelativeTimeHe,
+  freshnessLabelHe,
+  hotIndicatorHe,
+  remainingTimeHe,
+} from '../lib/relativeTime';
+import { formatDistanceHe } from '../lib/geo';
 import { trustLabelHe } from '../lib/simulatedIntel';
 import { quickStatusLabel } from '../lib/answerOptions';
 import { canUserAnswerDrop, blockedReasonHe } from '../lib/answerEligibility';
 import { shareDrop } from '../lib/shareDrop';
 import { track } from '../lib/analytics';
 import type { LocationSource } from '../lib/devLocation';
+import type { Drop as DropType } from '../types/api';
 import { styles } from './DropDetailsScreen.styles';
 
 type Props = NativeStackScreenProps<DropFlowParamList, 'DropDetails'>;
+
+function statusLabelHe(status: DropType['status']): string {
+  switch (status) {
+    case 'ACTIVE':
+      return 'פתוחה';
+    case 'CLOSED':
+      return 'סגורה';
+    case 'EXPIRED':
+      return 'פג תוקף';
+    case 'RESOLVED':
+      return 'טופלה';
+    default:
+      return status;
+  }
+}
 
 export function DropDetailsScreen({ navigation, route }: Props) {
   const { dropId, cachedDrop } = route.params;
@@ -170,6 +192,11 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   const latestAnswerAgeMin = latestAnswerIso
     ? Math.max(0, Math.floor((nowMs - new Date(latestAnswerIso).getTime()) / 60_000))
     : null;
+  const hotLabel = hotIndicatorHe({
+    answerCount: effectiveAnswerCount,
+    latestAnswerIso,
+    nowMs,
+  });
 
   const openReportDrop = useCallback(() => {
     navigation.navigate('ReportContent', { targetType: 'drop', targetId: dropId });
@@ -204,8 +231,8 @@ export function DropDetailsScreen({ navigation, route }: Props) {
           onPress: async () => {
             try {
               await ensureAnonymousSession();
-              await closeOwnDrop(dropId);
-              navigation.goBack();
+              const updated = await closeOwnDrop(dropId);
+              setDrop(updated);
             } catch (e) {
               Alert.alert('לא הצלחנו לסגור', apiUserMessageHeAuto(e));
             }
@@ -305,6 +332,9 @@ export function DropDetailsScreen({ navigation, route }: Props) {
   const [lng, lat] = drop.location.coordinates;
   const eligibility = canUserAnswerDrop({ drop, userCoords: userPos });
   const distanceFromUser = eligibility.distanceMeters ?? null;
+  const expiresMs = new Date(drop.expiresAt).getTime();
+  const isInactive = drop.status !== 'ACTIVE' || expiresMs <= nowMs;
+  const remainingHe = remainingTimeHe(expiresMs - nowMs);
 
   return (
     <ScrollView
@@ -317,7 +347,7 @@ export function DropDetailsScreen({ navigation, route }: Props) {
             <View style={styles.mapFallback}>
               <MapFallbackNotice />
               <Text style={styles.coords}>
-                {lat.toFixed(4)}, {lng.toFixed(4)} · רדיוס {drop.radiusMeters}מ׳
+                {lat.toFixed(4)}, {lng.toFixed(4)} · רדיוס {formatDistanceHe(drop.radiusMeters)}
               </Text>
             </View>
           }
@@ -414,14 +444,58 @@ export function DropDetailsScreen({ navigation, route }: Props) {
           <View style={styles.pill}>
             <Text style={styles.pillText}>{categoryHe(drop.category)}</Text>
           </View>
-          <View style={styles.pillMuted}>
-            <Text style={styles.pillMutedText}>{effectiveAnswerCount} תשובות פעילות</Text>
+          {drop.isMine ? (
+            <View style={styles.pillOwner}>
+              <Text style={styles.pillOwnerText}>שלך</Text>
+            </View>
+          ) : null}
+          <View
+            style={[
+              styles.pillStatus,
+              drop.status === 'ACTIVE' ? styles.pillStatusOpen : styles.pillStatusClosed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.pillStatusText,
+                drop.status === 'ACTIVE'
+                  ? styles.pillStatusTextOpen
+                  : styles.pillStatusTextClosed,
+              ]}
+            >
+              {isInactive && drop.status === 'ACTIVE' ? 'פג תוקף' : statusLabelHe(drop.status)}
+            </Text>
           </View>
+          <View style={styles.pillMuted}>
+            <Text style={styles.pillMutedText}>{effectiveAnswerCount} תשובות</Text>
+          </View>
+          {hotLabel ? (
+            <View style={styles.pillHot}>
+              <Text style={styles.pillHotText}>{hotLabel}</Text>
+            </View>
+          ) : null}
         </View>
+        {drop.isMine && !isInactive ? (
+          <Pressable
+            onPress={confirmCloseOwn}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="סמן שקיבלתי תשובה וסגור את השאלה"
+            style={({ pressed }) => [
+              styles.ownerCloseChip,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={14} color="#86EFAC" />
+            <Text style={styles.ownerCloseChipText}>קיבלתי תשובה — סגור</Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.q}>{drop.question}</Text>
         <Text style={styles.meta}>
-          רדיוס כיסוי: {drop.radiusMeters}מ׳
-          {distanceFromUser != null ? ` · מרחק משוער ממך: ~${distanceFromUser}מ׳` : ''}
+          רדיוס כיסוי: {formatDistanceHe(drop.radiusMeters)}
+          {distanceFromUser != null
+            ? ` · מרחק משוער ממך: ~${formatDistanceHe(distanceFromUser)}`
+            : ''}
         </Text>
       </View>
 
@@ -441,7 +515,20 @@ export function DropDetailsScreen({ navigation, route }: Props) {
         ) : null}
       </View>
 
-      {eligibility.canAnswer ? (
+      {isInactive ? (
+        <View style={styles.blockedBanner}>
+          <Text style={styles.blockedBannerText}>השאלה נסגרה</Text>
+          <Text style={styles.closedBannerSub}>
+            התשובות מהשטח נשמרות לצפייה. לא ניתן להוסיף תשובות חדשות.
+          </Text>
+        </View>
+      ) : drop.isMine ? (
+        <View style={[styles.blockedBanner, styles.blockedBannerOwner]}>
+          <Text style={styles.blockedBannerText}>
+            ממתין לתשובות מהשטח{remainingHe ? ` · ${remainingHe}` : ''}
+          </Text>
+        </View>
+      ) : eligibility.canAnswer ? (
         <Button
           label="אני כאן עכשיו — ענה"
           icon="navigate"
@@ -450,12 +537,7 @@ export function DropDetailsScreen({ navigation, route }: Props) {
           style={styles.answerCta}
         />
       ) : (
-        <View
-          style={[
-            styles.blockedBanner,
-            eligibility.reason === 'own_drop' && styles.blockedBannerOwner,
-          ]}
-        >
+        <View style={styles.blockedBanner}>
           <Text style={styles.blockedBannerText}>
             {blockedReasonHe(eligibility.reason, eligibility.distanceMeters)}
           </Text>
@@ -481,7 +563,7 @@ export function DropDetailsScreen({ navigation, route }: Props) {
                 </Text>
                 {a.text && a.text !== '—' ? <Text style={styles.answerText}>{a.text}</Text> : null}
                 <Text style={styles.answerMeta}>
-                  ~{a.distanceFromDrop}מ׳ מהמרכז · {formatRelativeTimeHe(a.createdAt, nowMs)}
+                  ~{formatDistanceHe(a.distanceFromDrop)} מהמרכז · {formatRelativeTimeHe(a.createdAt, nowMs)}
                 </Text>
                 <View style={styles.answerActions}>
                   <Pressable

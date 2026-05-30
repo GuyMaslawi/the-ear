@@ -20,7 +20,7 @@ import type { Drop } from '../types/api';
 import { ensureAnonymousSession, fetchMyDrops } from '../lib/api';
 import { apiUserMessageHeAuto } from '../lib/apiErrors';
 import { categoryHe, categoryMarkerIcon } from '../lib/categories';
-import { formatRelativeTimeHe, freshnessLabelHe } from '../lib/relativeTime';
+import { formatRelativeTimeHe, freshnessLabelHe, remainingTimeHe } from '../lib/relativeTime';
 import { useHiddenContent } from '../lib/hiddenContent';
 
 type Props = NativeStackScreenProps<MyStackParamList, 'MyQuestions'>;
@@ -62,16 +62,19 @@ function FriendlyEmptyCard({ onAsk }: { onAsk: () => void }) {
 }
 
 function statusShortHe(drop: Drop, nowMs: number): string {
-  if (drop.status === 'EXPIRED') return 'נסגרה';
-  if (drop.status === 'CLOSED') return 'נסגרה';
+  const expiresMs = new Date(drop.expiresAt).getTime();
+  const expiredByClock =
+    Number.isFinite(expiresMs) && expiresMs - nowMs <= 0;
+  if (drop.status === 'EXPIRED' || (drop.status === 'ACTIVE' && expiredByClock)) {
+    return 'פג תוקף';
+  }
+  if (drop.status === 'CLOSED') return 'סגורה';
   if (drop.status === 'RESOLVED') return 'טופלה';
   if (drop.status === 'ACTIVE') {
-    if (drop.answerCount > 0) return `יש ${drop.answerCount} תשובות`;
-    const expiresMs = new Date(drop.expiresAt).getTime();
-    if (Number.isFinite(expiresMs) && expiresMs - nowMs <= 10 * 60_000 && expiresMs - nowMs > 0) {
-      return 'נסגרת בקרוב';
-    }
-    return 'ממתינה לתשובות';
+    if (drop.answerCount > 0) return `פתוחה · ${drop.answerCount} תשובות`;
+    const remain = remainingTimeHe(expiresMs - nowMs);
+    if (remain && expiresMs - nowMs <= 10 * 60_000) return 'נסגרת בקרוב';
+    return remain ? `פתוחה · ${remain}` : 'פתוחה';
   }
   return drop.status;
 }

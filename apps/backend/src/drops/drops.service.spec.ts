@@ -16,6 +16,8 @@ function makeDropDoc(overrides: Partial<Record<string, unknown>> = {}) {
     status: DropStatus.ACTIVE,
     createdBy: new Types.ObjectId(),
     expiresAt: new Date(Date.now() + 60_000),
+    closedAt: undefined as Date | undefined,
+    purgeAt: undefined as Date | undefined,
     answerCount: 0,
     aiSummary: '',
     confidenceScore: 0,
@@ -86,7 +88,7 @@ describe('DropsService', () => {
       expect(result.isMine).toBe(true);
     });
 
-    it('defaults ttlHours to 24 hours when omitted', async () => {
+    it('defaults ttlHours to 6 hours when omitted', async () => {
       model.create.mockResolvedValue(makeDropDoc());
       const before = Date.now();
       await service.create(new Types.ObjectId().toString(), {
@@ -98,9 +100,26 @@ describe('DropsService', () => {
       } as never);
       const after = Date.now();
       const persisted = model.create.mock.calls[0][0];
-      const dayMs = 24 * 3600_000;
-      expect(persisted.expiresAt.getTime()).toBeGreaterThanOrEqual(before + dayMs);
-      expect(persisted.expiresAt.getTime()).toBeLessThanOrEqual(after + dayMs);
+      const ttlMs = 6 * 3600_000;
+      expect(persisted.expiresAt.getTime()).toBeGreaterThanOrEqual(before + ttlMs);
+      expect(persisted.expiresAt.getTime()).toBeLessThanOrEqual(after + ttlMs);
+    });
+
+    it('sets purgeAt to expiresAt + 30 day retention window', async () => {
+      model.create.mockResolvedValue(makeDropDoc());
+      await service.create(new Types.ObjectId().toString(), {
+        question: 'a question',
+        category: DropCategory.OTHER,
+        lat: 0,
+        lng: 0,
+        radiusMeters: 500,
+        ttlHours: 2,
+      });
+      const persisted = model.create.mock.calls[0][0];
+      const retentionMs = 30 * 24 * 3600_000;
+      expect(persisted.purgeAt.getTime()).toBe(
+        persisted.expiresAt.getTime() + retentionMs,
+      );
     });
   });
 
@@ -158,6 +177,7 @@ describe('DropsService', () => {
       model.findById.mockReturnValue({ exec: jest.fn().mockResolvedValue(doc) });
       const out = await service.closeOwn('id', userId.toString());
       expect(doc.status).toBe(DropStatus.CLOSED);
+      expect(doc.closedAt).toBeInstanceOf(Date);
       expect(doc.save).toHaveBeenCalled();
       expect(out.status).toBe(DropStatus.CLOSED);
     });

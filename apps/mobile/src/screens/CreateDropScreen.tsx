@@ -86,7 +86,7 @@ export function CreateDropScreen({ navigation, route }: Props) {
         lat,
         lng,
         radiusMeters,
-        ttlHours: 24,
+        ttlHours: 6,
       });
     } catch (e) {
       notifyError();

@@ -33,3 +33,34 @@ export function freshnessLabelHe(
   if (min <= 720) return { label: 'ישן יחסית', level: 'stale' };
   return { label: 'לא עדכני', level: 'outdated' };
 }
+
+/** Natural Hebrew "time until close" copy, or null when already past. */
+export function remainingTimeHe(msLeft: number): string | null {
+  if (!Number.isFinite(msLeft) || msLeft <= 0) return null;
+  const mins = Math.round(msLeft / 60_000);
+  if (mins < 1) return 'נסגרת בקרוב';
+  if (mins < 60) return `נסגרת בעוד ${mins} דקות`;
+  const hours = Math.round(mins / 60);
+  if (hours === 1) return 'נסגרת בעוד כשעה';
+  return `נסגרת בעוד כ־${hours} שעות`;
+}
+
+/**
+ * "חמה עכשיו" only when there's real signal: 3+ answers OR an answer in the
+ * last 15 minutes. Returns null when nothing safely indicates heat.
+ */
+export function hotIndicatorHe(opts: {
+  answerCount: number;
+  latestAnswerIso?: string | null;
+  nowMs?: number;
+}): string | null {
+  const { answerCount, latestAnswerIso, nowMs = Date.now() } = opts;
+  if (answerCount >= 3) return 'חמה עכשיו';
+  if (latestAnswerIso) {
+    const ageMs = nowMs - new Date(latestAnswerIso).getTime();
+    if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 15 * 60_000) {
+      return 'חמה עכשיו';
+    }
+  }
+  return null;
+}

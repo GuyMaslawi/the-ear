@@ -1,5 +1,5 @@
 import type { Drop } from '../types/api';
-import { distanceMeters } from './geo';
+import { distanceMeters, formatDistanceHe } from './geo';
 import type { LocationSource } from './devLocation';
 
 export type BlockReason =
@@ -74,7 +74,9 @@ export function blockedReasonHe(
     case 'own_drop':
       return 'זו שאלה שלך — ממתין לתשובות מהשטח';
     case 'out_of_radius':
-      return `צריך להיות קרוב יותר כדי לענות מהשטח · מרחק נוכחי: ${distanceMeters ?? '?'} מ׳`;
+      return `צריך להיות קרוב יותר כדי לענות מהשטח · מרחק נוכחי: ${
+        distanceMeters != null ? formatDistanceHe(distanceMeters) : '?'
+      }`;
     case 'missing_location':
       return 'צריך מיקום פעיל כדי לענות';
     case 'expired':

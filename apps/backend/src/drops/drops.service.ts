@@ -12,6 +12,11 @@ import { DropStatus } from '../common/enums';
 import { GeoService } from '../geo/geo.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
+/** Hours a drop stays open when the client omits ttlHours. */
+const DEFAULT_TTL_HOURS = 6;
+/** Days a closed/expired drop is retained before hard-delete (TTL index). */
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class DropsService {
   private readonly log = new Logger(DropsService.name);
@@ -26,12 +31,13 @@ export class DropsService {
     if (drop.status !== DropStatus.ACTIVE) return;
     if (drop.expiresAt <= new Date()) {
       drop.status = DropStatus.EXPIRED;
+      if (!drop.purgeAt) drop.purgeAt = new Date(Date.now() + RETENTION_MS);
       void drop.save();
     }
   }
 
   async create(userId: string, dto: CreateDropDto) {
-    const ttlMs = (dto.ttlHours ?? 24) * 60 * 60 * 1000;
+    const ttlMs = (dto.ttlHours ?? DEFAULT_TTL_HOURS) * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + ttlMs);
     const location = this.geo.point(dto.lat, dto.lng);
     const doc = await this.dropModel.create({
@@ -42,6 +48,7 @@ export class DropsService {
       status: DropStatus.ACTIVE,
       createdBy: new Types.ObjectId(userId),
       expiresAt,
+      purgeAt: new Date(expiresAt.getTime() + RETENTION_MS),
       answerCount: 0,
       aiSummary: '',
       confidenceScore: 0,
@@ -125,6 +132,8 @@ export class DropsService {
     }
     if (doc.status !== DropStatus.CLOSED) {
       doc.status = DropStatus.CLOSED;
+      doc.closedAt = new Date();
+      if (!doc.purgeAt) doc.purgeAt = new Date(Date.now() + RETENTION_MS);
       await doc.save();
       this.log.log(`Drop closed by owner id=${dropId}`);
     }
